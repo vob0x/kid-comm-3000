@@ -1,0 +1,1840 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+<meta name="theme-color" content="#000000" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<title>KID COMM 3000</title>
+<link rel="manifest" href="manifest.webmanifest" />
+<link rel="apple-touch-icon" href="icons/icon-192.svg" />
+<link rel="icon" type="image/svg+xml" href="icons/icon-192.svg" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Share+Tech+Mono&display=swap" rel="stylesheet" />
+
+<style>
+/* ============================================================
+   KID COMM 3000 — futuristic multi-mode walkie talkie PWA
+   ============================================================ */
+
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; user-select: none; -webkit-user-select: none; margin: 0; padding: 0; }
+
+html, body {
+  width: 100%;
+  height: 100%;
+  height: 100dvh;
+  overflow: hidden;
+  overscroll-behavior: none;
+  touch-action: manipulation;
+  font-family: 'Orbitron', 'Courier New', monospace;
+  background: #000;
+  color: #fff;
+}
+
+body {
+  /* Default (POLIZEI) theme vars */
+  --primary: #2a6fff;
+  --primary-glow: rgba(42, 111, 255, 0.7);
+  --accent: #ff2a3a;
+  --accent-glow: rgba(255, 42, 58, 0.7);
+  --bg-deep: #040814;
+  --bg-mid: #0a1428;
+  --surface: rgba(10, 20, 40, 0.6);
+  --surface-border: rgba(80, 140, 255, 0.4);
+  --text: #dce8ff;
+  --text-dim: #6a8bc0;
+  --danger: #ff2a3a;
+  --go: #00ff88;
+  transition: --primary 400ms ease, --accent 400ms ease;
+}
+
+/* ---------- THEME: POLIZEI ---------- */
+body[data-mode="polizei"] {
+  --primary: #2a6fff;
+  --primary-glow: rgba(42, 111, 255, 0.7);
+  --accent: #ff2a3a;
+  --accent-glow: rgba(255, 42, 58, 0.7);
+  --bg-deep: #040814;
+  --bg-mid: #0a1430;
+  --surface: rgba(10, 24, 48, 0.65);
+  --surface-border: rgba(80, 140, 255, 0.4);
+  --text: #dce8ff;
+  --text-dim: #6a8bc0;
+}
+/* ---------- THEME: FEUERWEHR ---------- */
+body[data-mode="feuerwehr"] {
+  --primary: #ff4400;
+  --primary-glow: rgba(255, 110, 0, 0.8);
+  --accent: #ffd24a;
+  --accent-glow: rgba(255, 210, 74, 0.7);
+  --bg-deep: #1a0604;
+  --bg-mid: #2a0a00;
+  --surface: rgba(40, 10, 4, 0.65);
+  --surface-border: rgba(255, 110, 0, 0.45);
+  --text: #ffeecc;
+  --text-dim: #c08860;
+}
+/* ---------- THEME: RETTUNG ---------- */
+body[data-mode="rettung"] {
+  --primary: #00d664;
+  --primary-glow: rgba(0, 214, 100, 0.7);
+  --accent: #ffffff;
+  --accent-glow: rgba(255, 255, 255, 0.8);
+  --bg-deep: #02160c;
+  --bg-mid: #04261a;
+  --surface: rgba(4, 30, 18, 0.65);
+  --surface-border: rgba(0, 214, 100, 0.4);
+  --text: #e0ffe8;
+  --text-dim: #6ab090;
+}
+/* ---------- THEME: ASTRONAUT ---------- */
+body[data-mode="astronaut"] {
+  --primary: #7a3fff;
+  --primary-glow: rgba(122, 63, 255, 0.8);
+  --accent: #00e4ff;
+  --accent-glow: rgba(0, 228, 255, 0.9);
+  --bg-deep: #02000a;
+  --bg-mid: #080320;
+  --surface: rgba(14, 6, 36, 0.55);
+  --surface-border: rgba(0, 228, 255, 0.45);
+  --text: #d8e6ff;
+  --text-dim: #7a88c0;
+}
+/* ---------- THEME: PIRATEN ---------- */
+body[data-mode="piraten"] {
+  --primary: #d49a2a;
+  --primary-glow: rgba(212, 154, 42, 0.8);
+  --accent: #ff5a00;
+  --accent-glow: rgba(255, 90, 0, 0.6);
+  --bg-deep: #1a0e02;
+  --bg-mid: #2e1a08;
+  --surface: rgba(40, 22, 8, 0.7);
+  --surface-border: rgba(212, 154, 42, 0.5);
+  --text: #ffe6b8;
+  --text-dim: #a08050;
+}
+/* ---------- THEME: NINJA ---------- */
+body[data-mode="ninja"] {
+  --primary: #ff1530;
+  --primary-glow: rgba(255, 21, 48, 0.8);
+  --accent: #ffffff;
+  --accent-glow: rgba(255, 255, 255, 0.6);
+  --bg-deep: #000000;
+  --bg-mid: #0a0000;
+  --surface: rgba(20, 0, 0, 0.7);
+  --surface-border: rgba(255, 21, 48, 0.45);
+  --text: #ffe8e8;
+  --text-dim: #906060;
+}
+
+/* ============================================================
+   BACKGROUND LAYER (mode-specific scenes)
+   ============================================================ */
+.bg {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  background: radial-gradient(ellipse at center, var(--bg-mid) 0%, var(--bg-deep) 100%);
+  transition: background 400ms ease;
+}
+.bg-layer { position: absolute; inset: 0; display: none; }
+body[data-mode="polizei"]   .bg-polizei   { display: block; }
+body[data-mode="feuerwehr"] .bg-feuerwehr { display: block; }
+body[data-mode="rettung"]   .bg-rettung   { display: block; }
+body[data-mode="astronaut"] .bg-astronaut { display: block; }
+body[data-mode="piraten"]   .bg-piraten   { display: block; }
+body[data-mode="ninja"]     .bg-ninja     { display: block; }
+
+/* ---- POLIZEI bg: alternating strobes ---- */
+.strobe {
+  position: absolute;
+  top: -120px;
+  width: 300px;
+  height: 300px;
+  border-radius: 50%;
+  filter: blur(80px);
+  opacity: 0;
+  mix-blend-mode: screen;
+}
+.strobe.sb {
+  left: -120px;
+  background: #2a6fff;
+  animation: strobeL 1.4s infinite;
+}
+.strobe.sr {
+  right: -120px;
+  background: #ff2a3a;
+  animation: strobeR 1.4s infinite;
+}
+@keyframes strobeL {
+  0%, 40% { opacity: 0; }
+  45%, 50% { opacity: 0.85; }
+  55%, 100% { opacity: 0; }
+}
+@keyframes strobeR {
+  0%, 90% { opacity: 0; }
+  95% { opacity: 0.85; }
+  100% { opacity: 0; }
+}
+.bg-polizei::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(180deg, transparent 0%, rgba(42, 111, 255, 0.06) 50%, transparent 100%),
+    repeating-linear-gradient(0deg, transparent 0, transparent 3px, rgba(255, 255, 255, 0.025) 3px, rgba(255, 255, 255, 0.025) 4px);
+  pointer-events: none;
+}
+
+/* ---- FEUERWEHR bg: rising embers + flame glow ---- */
+.bg-feuerwehr::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse at center bottom, rgba(255, 110, 0, 0.3) 0%, transparent 55%),
+    radial-gradient(ellipse at center bottom, rgba(255, 200, 50, 0.18) 0%, transparent 35%);
+  animation: flameBreathe 3s ease-in-out infinite;
+}
+@keyframes flameBreathe {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 1; }
+}
+.ember {
+  position: absolute;
+  bottom: -10px;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: radial-gradient(circle, #ffd24a, #ff4400);
+  box-shadow: 0 0 8px #ff6a00;
+  animation: emberRise linear infinite;
+  opacity: 0;
+}
+@keyframes emberRise {
+  0%   { transform: translateY(0) translateX(0); opacity: 0; }
+  10%  { opacity: 1; }
+  90%  { opacity: 0.6; }
+  100% { transform: translateY(-100vh) translateX(var(--drift, 20px)); opacity: 0; }
+}
+
+/* ---- RETTUNG bg: pulsing cross + EKG ---- */
+.bg-rettung::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at center, rgba(0, 214, 100, 0.12) 0%, transparent 60%);
+  animation: rettungPulse 2.5s ease-in-out infinite;
+}
+@keyframes rettungPulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
+}
+.ekg-line {
+  position: absolute;
+  top: 25%;
+  left: -100%;
+  width: 200%;
+  height: 40px;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 800 40'><path d='M0 20 L150 20 L170 10 L190 35 L210 5 L230 20 L800 20' stroke='%2300ff88' stroke-width='2' fill='none' stroke-linecap='round'/></svg>");
+  background-repeat: repeat-x;
+  background-size: 400px 40px;
+  animation: ekgScroll 4s linear infinite;
+  opacity: 0.5;
+}
+@keyframes ekgScroll {
+  from { transform: translateX(0); }
+  to   { transform: translateX(400px); }
+}
+
+/* ---- ASTRONAUT bg: starfield + nebula ---- */
+.bg-astronaut::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 60% 40% at 20% 30%, rgba(122, 63, 255, 0.35) 0%, transparent 60%),
+    radial-gradient(ellipse 50% 40% at 80% 70%, rgba(0, 228, 255, 0.25) 0%, transparent 60%),
+    radial-gradient(ellipse 40% 30% at 60% 20%, rgba(255, 63, 180, 0.18) 0%, transparent 55%);
+  animation: nebulaDrift 30s ease-in-out infinite;
+}
+@keyframes nebulaDrift {
+  0%, 100% { transform: scale(1) rotate(0deg); }
+  50% { transform: scale(1.15) rotate(3deg); }
+}
+.starfield {
+  position: absolute;
+  inset: 0;
+  background-image:
+    radial-gradient(1px 1px at 23px 44px, white, transparent),
+    radial-gradient(1px 1px at 47px 120px, white, transparent),
+    radial-gradient(2px 2px at 83px 80px, white, transparent),
+    radial-gradient(1px 1px at 130px 200px, white, transparent),
+    radial-gradient(1px 1px at 180px 60px, white, transparent),
+    radial-gradient(2px 2px at 210px 230px, white, transparent),
+    radial-gradient(1px 1px at 260px 150px, white, transparent),
+    radial-gradient(1px 1px at 300px 40px, white, transparent),
+    radial-gradient(2px 2px at 340px 280px, white, transparent),
+    radial-gradient(1px 1px at 20px 300px, white, transparent),
+    radial-gradient(1px 1px at 90px 340px, white, transparent),
+    radial-gradient(2px 2px at 150px 370px, white, transparent),
+    radial-gradient(1px 1px at 220px 400px, white, transparent),
+    radial-gradient(1px 1px at 280px 460px, white, transparent),
+    radial-gradient(1px 1px at 330px 510px, white, transparent),
+    radial-gradient(2px 2px at 60px 500px, white, transparent),
+    radial-gradient(1px 1px at 120px 570px, white, transparent),
+    radial-gradient(1px 1px at 200px 620px, white, transparent),
+    radial-gradient(1px 1px at 260px 680px, white, transparent),
+    radial-gradient(1px 1px at 320px 740px, white, transparent);
+  background-repeat: repeat;
+  background-size: 400px 800px;
+  animation: starfieldDrift 120s linear infinite;
+  opacity: 0.9;
+}
+@keyframes starfieldDrift {
+  from { background-position: 0 0; }
+  to   { background-position: -400px -800px; }
+}
+.twinkle {
+  position: absolute;
+  width: 3px; height: 3px;
+  background: white;
+  border-radius: 50%;
+  box-shadow: 0 0 6px white;
+  animation: twinkle 3s ease-in-out infinite;
+}
+@keyframes twinkle {
+  0%, 100% { opacity: 0.2; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.4); }
+}
+
+/* ---- PIRATEN bg: parchment + slight rocking ---- */
+.bg-piraten::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse at center, rgba(80, 40, 10, 0.4) 0%, rgba(20, 8, 2, 0.9) 100%),
+    repeating-linear-gradient(90deg, rgba(0, 0, 0, 0.08) 0, rgba(0, 0, 0, 0.08) 2px, transparent 2px, transparent 10px),
+    repeating-linear-gradient(0deg, rgba(60, 30, 5, 0.15) 0, rgba(60, 30, 5, 0.15) 1px, transparent 1px, transparent 8px);
+}
+.bg-piraten::after {
+  content: '⚓';
+  position: absolute;
+  top: 20%;
+  right: 10%;
+  font-size: 140px;
+  opacity: 0.06;
+  animation: rock 5s ease-in-out infinite;
+}
+@keyframes rock {
+  0%, 100% { transform: rotate(-5deg); }
+  50% { transform: rotate(5deg); }
+}
+
+/* ---- NINJA bg: dark + scan line + shuriken ---- */
+.bg-ninja::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse at center, rgba(60, 0, 0, 0.25) 0%, transparent 70%),
+    repeating-linear-gradient(0deg, rgba(255, 0, 0, 0.02) 0, rgba(255, 0, 0, 0.02) 1px, transparent 1px, transparent 3px);
+}
+.ninja-scan {
+  position: absolute;
+  left: 0; right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--primary), transparent);
+  box-shadow: 0 0 20px var(--primary);
+  animation: ninjaScan 4s linear infinite;
+}
+@keyframes ninjaScan {
+  0%   { top: 0%; opacity: 0; }
+  5%   { opacity: 1; }
+  95%  { opacity: 1; }
+  100% { top: 100%; opacity: 0; }
+}
+.shuriken {
+  position: absolute;
+  top: 15%;
+  right: 10%;
+  font-size: 100px;
+  opacity: 0.08;
+  animation: spin 12s linear infinite;
+}
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+/* ============================================================
+   HUD (always-on interface over background)
+   ============================================================ */
+.hud {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  padding: calc(env(safe-area-inset-top) + 10px) 16px calc(env(safe-area-inset-bottom) + 12px);
+  gap: 10px;
+}
+
+/* ---- Top bar ---- */
+.top-bar {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  background: var(--surface);
+  border: 1px solid var(--surface-border);
+  border-radius: 10px;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  box-shadow: 0 0 20px rgba(0, 0, 0, 0.5), inset 0 0 20px rgba(0, 0, 0, 0.3);
+}
+.power-btn {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.12), rgba(0, 0, 0, 0.4));
+  border: 1.5px solid var(--surface-border);
+  color: var(--text);
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: 0 0 10px rgba(0, 0, 0, 0.5), inset 0 1px 1px rgba(255, 255, 255, 0.2);
+  transition: all 150ms;
+}
+.power-btn:active { transform: scale(0.92); }
+
+.mode-title {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: var(--primary);
+  text-shadow: 0 0 10px var(--primary-glow), 0 0 20px var(--primary-glow);
+  font-weight: 900;
+  font-size: 18px;
+  letter-spacing: 2px;
+}
+.mode-icon {
+  font-size: 26px;
+  filter: drop-shadow(0 0 8px var(--primary-glow));
+}
+.conn-indicator {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-dim);
+  font-size: 10px;
+  letter-spacing: 1px;
+  font-family: 'Share Tech Mono', monospace;
+}
+.conn-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #444;
+  box-shadow: inset 0 0 2px #000;
+  transition: all 200ms;
+}
+body[data-conn="ready"]     .conn-dot { background: #ffae33; box-shadow: 0 0 8px #ffae33; }
+body[data-conn="connecting"] .conn-dot { background: #ffae33; animation: blink 0.8s infinite; }
+body[data-conn="connected"] .conn-dot { background: var(--go); box-shadow: 0 0 10px var(--go); }
+body[data-conn="ready"] .conn-label::after { content: 'BEREIT'; }
+body[data-conn="connecting"] .conn-label::after { content: 'VERBINDE'; }
+body[data-conn="connected"] .conn-label::after { content: 'ONLINE'; }
+body:not([data-conn]) .conn-label::after,
+body[data-conn="off"] .conn-label::after { content: 'OFFLINE'; }
+@keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+
+/* ---- Display / Visualizer area ---- */
+.display-area {
+  flex: 1 1 auto;
+  min-height: 120px;
+  position: relative;
+  border: 1px solid var(--surface-border);
+  border-radius: 14px;
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0.7));
+  overflow: hidden;
+  box-shadow: inset 0 0 30px rgba(0, 0, 0, 0.8), 0 0 20px rgba(0, 0, 0, 0.4);
+}
+#vizCanvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+.channel-display {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  z-index: 2;
+}
+.ch-big {
+  font-family: 'Orbitron', monospace;
+  font-size: clamp(64px, 18vw, 120px);
+  font-weight: 900;
+  color: var(--primary);
+  text-shadow: 0 0 20px var(--primary-glow), 0 0 40px var(--primary-glow), 0 0 4px #fff;
+  letter-spacing: 4px;
+  line-height: 0.9;
+}
+.ch-small {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 13px;
+  letter-spacing: 3px;
+  color: var(--accent);
+  text-shadow: 0 0 8px var(--accent-glow);
+  margin-top: 4px;
+}
+.corner-tag {
+  position: absolute;
+  padding: 4px 10px;
+  font-size: 9px;
+  letter-spacing: 1.5px;
+  color: var(--text-dim);
+  font-family: 'Share Tech Mono', monospace;
+  pointer-events: none;
+}
+.ct-tl { top: 8px; left: 10px; }
+.ct-tr { top: 8px; right: 10px; }
+.ct-bl { bottom: 8px; left: 10px; }
+.ct-br { bottom: 8px; right: 10px; }
+.ct-tr::before { content: '● REC'; color: var(--danger); animation: blink 1.2s infinite; opacity: 0; }
+body[data-tx="1"] .ct-tr::before { opacity: 1; }
+
+/* ---- Talk button (tap-to-talk toggle) ---- */
+.talk-area {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 6px 0 2px;
+}
+.talk-btn {
+  position: relative;
+  width: 100%;
+  max-width: 360px;
+  height: 100px;
+  border-radius: 22px;
+  border: 2px solid var(--primary);
+  background:
+    radial-gradient(ellipse at center, var(--primary-glow) 0%, transparent 65%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.1), rgba(0, 0, 0, 0.4));
+  color: #fff;
+  font-family: 'Orbitron', monospace;
+  font-weight: 900;
+  font-size: 22px;
+  letter-spacing: 2px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  overflow: hidden;
+  box-shadow:
+    0 0 30px var(--primary-glow),
+    inset 0 0 20px rgba(255, 255, 255, 0.15),
+    inset 0 -4px 12px rgba(0, 0, 0, 0.4);
+  text-shadow: 0 0 8px rgba(0, 0, 0, 0.8);
+  transition: all 160ms;
+}
+.talk-icon {
+  font-size: 38px;
+  filter: drop-shadow(0 0 10px #fff);
+}
+.talk-label { text-align: left; line-height: 1.1; }
+.talk-label small { display: block; font-size: 11px; letter-spacing: 1px; font-weight: 400; opacity: 0.75; }
+.talk-btn::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse at 30% 30%, rgba(255, 255, 255, 0.25), transparent 60%);
+  pointer-events: none;
+}
+
+body[data-tx="1"] .talk-btn {
+  background:
+    radial-gradient(ellipse at center, var(--accent-glow) 0%, transparent 65%),
+    linear-gradient(180deg, rgba(255, 100, 100, 0.3), rgba(100, 0, 0, 0.6));
+  border-color: var(--accent);
+  box-shadow:
+    0 0 50px var(--accent-glow),
+    inset 0 0 30px rgba(255, 200, 200, 0.3),
+    inset 0 -4px 12px rgba(0, 0, 0, 0.4);
+  animation: talkPulse 1.2s ease-in-out infinite;
+}
+@keyframes talkPulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.015); }
+}
+body[data-talk="off"] .talk-btn {
+  opacity: 0.45;
+  border-color: #444;
+  box-shadow: none;
+  background: rgba(20, 20, 20, 0.6);
+}
+
+/* ---- Mid controls row ---- */
+.ctrl-row {
+  display: grid;
+  grid-template-columns: 60px 1fr 60px;
+  gap: 10px;
+  align-items: center;
+}
+.nav-btn, .call-btn {
+  background: var(--surface);
+  border: 1.5px solid var(--surface-border);
+  border-radius: 10px;
+  color: var(--text);
+  font-family: 'Orbitron', monospace;
+  font-weight: 700;
+  font-size: 14px;
+  letter-spacing: 2px;
+  padding: 12px 4px;
+  cursor: pointer;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4), inset 0 1px 1px rgba(255, 255, 255, 0.1);
+  transition: all 100ms;
+}
+.nav-btn { font-size: 20px; padding: 12px 0; color: var(--primary); text-shadow: 0 0 8px var(--primary-glow); }
+.call-btn {
+  color: var(--accent);
+  text-shadow: 0 0 8px var(--accent-glow);
+  border-color: var(--accent);
+  box-shadow: 0 0 15px var(--accent-glow), inset 0 1px 1px rgba(255, 255, 255, 0.15);
+}
+.nav-btn:active, .call-btn:active {
+  transform: scale(0.95);
+  background: rgba(255, 255, 255, 0.1);
+}
+
+/* ---- Bottom row ---- */
+.bottom-row {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+}
+.mini-btn {
+  background: var(--surface);
+  border: 1px solid var(--surface-border);
+  border-radius: 10px;
+  color: var(--text);
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 1px;
+  padding: 10px 2px;
+  cursor: pointer;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+  transition: all 100ms;
+}
+.mini-btn .mb-icon { font-size: 20px; }
+.mini-btn:active { transform: scale(0.94); background: rgba(255, 255, 255, 0.1); }
+#sosBtn { color: var(--danger); border-color: var(--danger); }
+
+/* ============================================================
+   MODALS
+   ============================================================ */
+.modal {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: rgba(0, 0, 0, 0.9);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+.modal.hidden { display: none; }
+.modal-box {
+  background: linear-gradient(180deg, var(--bg-mid), var(--bg-deep));
+  border: 1.5px solid var(--surface-border);
+  border-radius: 16px;
+  padding: 24px 20px;
+  max-width: 360px;
+  width: 100%;
+  text-align: center;
+  box-shadow: 0 0 40px var(--primary-glow), inset 0 0 30px rgba(0, 0, 0, 0.5);
+}
+.modal-box h2 {
+  font-family: 'Orbitron', monospace;
+  font-size: 18px;
+  letter-spacing: 3px;
+  color: var(--primary);
+  text-shadow: 0 0 10px var(--primary-glow);
+  margin-bottom: 14px;
+}
+.modal-box p {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-dim);
+  margin: 8px 0;
+}
+.modal-box button {
+  background: linear-gradient(180deg, var(--primary), rgba(0, 0, 0, 0.6));
+  border: 1.5px solid var(--primary);
+  color: #fff;
+  font-family: 'Orbitron', monospace;
+  font-weight: 700;
+  font-size: 13px;
+  letter-spacing: 2px;
+  padding: 14px 20px;
+  border-radius: 10px;
+  cursor: pointer;
+  width: 100%;
+  margin-top: 10px;
+  box-shadow: 0 0 20px var(--primary-glow);
+  transition: all 150ms;
+}
+.modal-box button:active { transform: scale(0.96); }
+.modal-box button.secondary {
+  background: rgba(30, 30, 30, 0.7);
+  border-color: #555;
+  box-shadow: none;
+}
+#qrCanvas {
+  background: #fff;
+  padding: 14px;
+  border-radius: 10px;
+  margin: 12px auto;
+  display: block;
+}
+#peerIdText {
+  font-size: 10px;
+  color: #666;
+  word-break: break-all;
+  margin: 6px 0;
+  font-family: 'Share Tech Mono', monospace;
+}
+#reader {
+  border-radius: 10px;
+  overflow: hidden;
+  margin: 12px 0;
+  background: #000;
+}
+#reader video { border-radius: 10px; max-width: 100%; }
+
+/* ---- Startup modal ---- */
+#startModal .modal-box {
+  border-color: var(--accent);
+  box-shadow: 0 0 60px var(--accent-glow);
+}
+#startModal h2 {
+  font-size: 26px;
+  color: var(--accent);
+  text-shadow: 0 0 20px var(--accent-glow);
+}
+.start-logo {
+  font-size: 60px;
+  margin: 10px 0;
+  filter: drop-shadow(0 0 20px var(--primary-glow));
+}
+
+/* ---- Off state: hide HUD, show start modal ---- */
+body[data-state="off"] .hud { display: none; }
+body[data-state="off"] .bg { filter: brightness(0.4); }
+body[data-state="on"] #startModal { display: none; }
+
+/* ---- Toast ---- */
+.toast {
+  position: fixed;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0, 0, 0, 0.95);
+  color: var(--primary);
+  padding: 10px 22px;
+  border-radius: 24px;
+  border: 1px solid var(--surface-border);
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 12px;
+  letter-spacing: 1px;
+  z-index: 200;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 250ms;
+  text-shadow: 0 0 6px var(--primary-glow);
+}
+.toast.show { opacity: 1; }
+
+/* ---- Desktop too-big warning ---- */
+.desk-warn {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 500;
+  background: #000;
+  color: #fff;
+  padding: 40px;
+  text-align: center;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  font-family: 'Orbitron', monospace;
+}
+.desk-warn h1 { font-size: 22px; color: var(--accent); margin-bottom: 14px; }
+.desk-warn p { font-size: 14px; line-height: 1.6; color: #aaa; max-width: 420px; }
+@media (min-width: 800px) and (min-height: 700px) {
+  .desk-warn { display: flex; }
+  .bg, .hud, .modal { display: none !important; }
+}
+
+/* ---- Responsive tweaks ---- */
+@media (max-height: 700px) {
+  .talk-btn { height: 80px; font-size: 18px; }
+  .talk-icon { font-size: 32px; }
+  .display-area { min-height: 90px; }
+  .ch-big { font-size: clamp(48px, 14vw, 90px); }
+}
+@media (max-height: 600px) {
+  .top-bar { padding: 6px 10px; }
+  .power-btn { width: 34px; height: 34px; font-size: 16px; }
+  .mode-title { font-size: 14px; }
+  .talk-btn { height: 68px; font-size: 16px; }
+  .talk-icon { font-size: 26px; }
+  .bottom-row .mini-btn { padding: 6px 2px; font-size: 9px; }
+  .mini-btn .mb-icon { font-size: 16px; }
+}
+</style>
+</head>
+
+<body data-state="off" data-mode="polizei" data-conn="off" data-tx="0" data-talk="off">
+
+<!-- Desktop warning -->
+<div class="desk-warn">
+  <h1>📱 NUR FÜR HANDYS</h1>
+  <p>KID COMM 3000 läuft nur auf Smartphones. Öffne diese Seite auf deinem Handy über HTTPS (z. B. auf GitHub Pages), oder verkleinere dein Browser-Fenster auf Handy-Größe zum Testen.</p>
+</div>
+
+<!-- Background layers -->
+<div class="bg">
+  <div class="bg-layer bg-polizei">
+    <div class="strobe sb"></div>
+    <div class="strobe sr"></div>
+  </div>
+  <div class="bg-layer bg-feuerwehr">
+    <!-- embers injected by JS -->
+  </div>
+  <div class="bg-layer bg-rettung">
+    <div class="ekg-line"></div>
+  </div>
+  <div class="bg-layer bg-astronaut">
+    <div class="starfield"></div>
+    <!-- twinkles injected by JS -->
+  </div>
+  <div class="bg-layer bg-piraten"></div>
+  <div class="bg-layer bg-ninja">
+    <div class="ninja-scan"></div>
+    <div class="shuriken">✦</div>
+  </div>
+</div>
+
+<!-- HUD -->
+<div class="hud">
+
+  <div class="top-bar">
+    <button class="power-btn" id="powerBtn" title="Ausschalten">⏻</button>
+    <div class="mode-title">
+      <span class="mode-icon" id="modeIcon">🚓</span>
+      <span class="mode-name" id="modeName">POLIZEI</span>
+    </div>
+    <div class="conn-indicator">
+      <span class="conn-dot"></span>
+      <span class="conn-label"></span>
+    </div>
+  </div>
+
+  <div class="display-area">
+    <canvas id="vizCanvas"></canvas>
+    <div class="channel-display">
+      <div class="ch-big" id="chBig">01</div>
+      <div class="ch-small" id="chSmall">KANAL POLIZEI</div>
+    </div>
+    <div class="corner-tag ct-tl" id="fxTag">FX: NORMAL</div>
+    <div class="corner-tag ct-tr"></div>
+    <div class="corner-tag ct-bl" id="sigTag">SIG: --</div>
+    <div class="corner-tag ct-br" id="clockTag">--:--</div>
+  </div>
+
+  <div class="talk-area">
+    <button class="talk-btn" id="talkBtn">
+      <span class="talk-icon" id="talkIcon">🎙</span>
+      <span class="talk-label">
+        <span id="talkMain">TIPPEN</span>
+        <small id="talkSub">um zu sprechen</small>
+      </span>
+    </button>
+  </div>
+
+  <div class="ctrl-row">
+    <button class="nav-btn" id="modePrevBtn">◀</button>
+    <button class="call-btn" id="callBtn">📢 RUF</button>
+    <button class="nav-btn" id="modeNextBtn">▶</button>
+  </div>
+
+  <div class="bottom-row">
+    <button class="mini-btn" id="qrBtn"><span class="mb-icon">📡</span>CODE</button>
+    <button class="mini-btn" id="scanBtn"><span class="mb-icon">📷</span>SCAN</button>
+    <button class="mini-btn" id="fxBtn"><span class="mb-icon">🎭</span><span id="fxLabel">NORMAL</span></button>
+    <button class="mini-btn" id="sosBtn"><span class="mb-icon">🆘</span>SOS</button>
+  </div>
+
+</div>
+
+<!-- ============= Modals ============= -->
+
+<div class="modal" id="startModal">
+  <div class="modal-box">
+    <div class="start-logo">📻</div>
+    <h2>KID COMM 3000</h2>
+    <p>Funkgerät für echte Geheimagenten, Polizisten, Astronauten & Piraten!</p>
+    <p style="color: #888;">Tippe auf EINSCHALTEN und erlaube das Mikrofon.</p>
+    <button id="startBtn">⏻ EINSCHALTEN</button>
+  </div>
+</div>
+
+<div class="modal hidden" id="qrModal">
+  <div class="modal-box">
+    <h2>DEIN FUNK-CODE</h2>
+    <canvas id="qrCanvas"></canvas>
+    <p>Dein Freund scannt diesen Code mit "SCAN".</p>
+    <p id="peerIdText">—</p>
+    <button id="closeQrBtn">SCHLIESSEN</button>
+  </div>
+</div>
+
+<div class="modal hidden" id="scanModal">
+  <div class="modal-box">
+    <h2>CODE SCANNEN</h2>
+    <div id="reader"></div>
+    <p>Kamera auf den QR-Code halten.</p>
+    <button id="closeScanBtn" class="secondary">ABBRECHEN</button>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<!-- External libs -->
+<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+
+<script>
+/* ============================================================
+   KID COMM 3000 — main JS
+   ============================================================ */
+'use strict';
+
+// ---------- Modes ----------
+const MODES = [
+  {
+    id: 'polizei', name: 'POLIZEI', icon: '🚓',
+    audio: { freq: 1800, q: 1.2, noise: 0.020, dist: 3.2, highpass: 400 },
+    beep: 'policeSiren',
+  },
+  {
+    id: 'feuerwehr', name: 'FEUERWEHR', icon: '🚒',
+    audio: { freq: 1100, q: 0.8, noise: 0.030, dist: 4.2, highpass: 300 },
+    beep: 'airHorn',
+  },
+  {
+    id: 'rettung', name: 'RETTUNG', icon: '🚑',
+    audio: { freq: 1600, q: 0.9, noise: 0.015, dist: 2.5, highpass: 400 },
+    beep: 'ambulance',
+  },
+  {
+    id: 'astronaut', name: 'ASTRONAUT', icon: '🚀',
+    audio: { freq: 2000, q: 1.4, noise: 0.010, dist: 2.0, highpass: 600 },
+    beep: 'spaceSweep',
+  },
+  {
+    id: 'piraten', name: 'PIRATEN', icon: '🏴‍☠️',
+    audio: { freq: 900, q: 0.7, noise: 0.035, dist: 4.8, highpass: 250 },
+    beep: 'shipBell',
+  },
+  {
+    id: 'ninja', name: 'NINJA', icon: '🥷',
+    audio: { freq: 2200, q: 1.5, noise: 0.005, dist: 2.8, highpass: 800 },
+    beep: 'ninjaStrike',
+  },
+];
+
+// ---------- Voice effects (applied to outgoing audio) ----------
+const EFFECTS = ['NORMAL', 'ROBOTER', 'TIEF', 'HOCH', 'ALIEN'];
+
+// ---------- State ----------
+const state = {
+  powered: false,
+  mode: 0,            // index into MODES
+  effect: 0,          // index into EFFECTS
+  peer: null,
+  myId: null,
+  conn: null,
+  call: null,
+  rawStream: null,    // raw mic
+  outStream: null,    // processed stream sent via WebRTC
+  outMute: null,      // GainNode used to mute outgoing audio (tap-to-talk)
+  effectChain: null,  // { input, output, nodes: [] }
+  remoteStream: null,
+  remoteAudioEl: null,
+  rxAnalyser: null,
+  txAnalyser: null,
+  connected: false,
+  transmitting: false,
+  ctx: null,
+  staticGain: null,
+  rxFilter: null,
+  rxDistortion: null,
+  scanner: null,
+};
+
+// ---------- DOM ----------
+const $ = (id) => document.getElementById(id);
+const els = {
+  body: document.body,
+  modeIcon: $('modeIcon'),
+  modeName: $('modeName'),
+  chBig: $('chBig'),
+  chSmall: $('chSmall'),
+  talkBtn: $('talkBtn'),
+  talkIcon: $('talkIcon'),
+  talkMain: $('talkMain'),
+  talkSub: $('talkSub'),
+  modePrevBtn: $('modePrevBtn'),
+  modeNextBtn: $('modeNextBtn'),
+  callBtn: $('callBtn'),
+  qrBtn: $('qrBtn'),
+  scanBtn: $('scanBtn'),
+  fxBtn: $('fxBtn'),
+  fxLabel: $('fxLabel'),
+  fxTag: $('fxTag'),
+  sosBtn: $('sosBtn'),
+  powerBtn: $('powerBtn'),
+  startBtn: $('startBtn'),
+  startModal: $('startModal'),
+  qrModal: $('qrModal'),
+  qrCanvas: $('qrCanvas'),
+  peerIdText: $('peerIdText'),
+  closeQrBtn: $('closeQrBtn'),
+  scanModal: $('scanModal'),
+  closeScanBtn: $('closeScanBtn'),
+  vizCanvas: $('vizCanvas'),
+  sigTag: $('sigTag'),
+  clockTag: $('clockTag'),
+  toast: $('toast'),
+  bgFire: document.querySelector('.bg-feuerwehr'),
+  bgAstro: document.querySelector('.bg-astronaut'),
+};
+
+// ---------- Toast ----------
+let toastTimer;
+function toast(msg, ms = 2000) {
+  els.toast.textContent = msg;
+  els.toast.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => els.toast.classList.remove('show'), ms);
+}
+
+// ---------- Background scene extras ----------
+function buildEmbers() {
+  for (let i = 0; i < 20; i++) {
+    const e = document.createElement('div');
+    e.className = 'ember';
+    e.style.left = Math.random() * 100 + '%';
+    e.style.animationDuration = (4 + Math.random() * 5) + 's';
+    e.style.animationDelay = (Math.random() * 8) + 's';
+    e.style.setProperty('--drift', (Math.random() * 60 - 30) + 'px');
+    els.bgFire.appendChild(e);
+  }
+}
+function buildTwinkles() {
+  for (let i = 0; i < 18; i++) {
+    const t = document.createElement('div');
+    t.className = 'twinkle';
+    t.style.left = Math.random() * 100 + '%';
+    t.style.top = Math.random() * 100 + '%';
+    t.style.animationDelay = (Math.random() * 3) + 's';
+    t.style.animationDuration = (2 + Math.random() * 3) + 's';
+    els.bgAstro.appendChild(t);
+  }
+}
+
+// ---------- Clock ----------
+function updateClock() {
+  const d = new Date();
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  els.clockTag.textContent = hh + ':' + mm;
+}
+
+// ============================================================
+//                       AUDIO ENGINE
+// ============================================================
+
+async function initAudio() {
+  if (state.ctx) return;
+  const Ctx = window.AudioContext || window.webkitAudioContext;
+  state.ctx = new Ctx();
+  if (state.ctx.state === 'suspended') await state.ctx.resume();
+
+  // Static hiss background (looped pink noise through highpass)
+  const ctx = state.ctx;
+  const bufSize = ctx.sampleRate * 2;
+  const buf = ctx.createBuffer(1, bufSize, ctx.sampleRate);
+  const d = buf.getChannelData(0);
+  let b0 = 0, b1 = 0, b2 = 0;
+  for (let i = 0; i < bufSize; i++) {
+    const w = Math.random() * 2 - 1;
+    b0 = 0.99765 * b0 + w * 0.0990460;
+    b1 = 0.96300 * b1 + w * 0.2965164;
+    b2 = 0.57000 * b2 + w * 1.0526913;
+    d[i] = (b0 + b1 + b2 + w * 0.1848) * 0.15;
+  }
+  const src = ctx.createBufferSource();
+  src.buffer = buf; src.loop = true;
+  const hp = ctx.createBiquadFilter();
+  hp.type = 'highpass'; hp.frequency.value = 1300;
+  state.staticGain = ctx.createGain();
+  state.staticGain.gain.value = MODES[0].audio.noise;
+  src.connect(hp); hp.connect(state.staticGain); state.staticGain.connect(ctx.destination);
+  src.start();
+}
+
+function makeDistortionCurve(amount) {
+  const n = 256;
+  const curve = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    const x = (i - n / 2) / (n / 2);
+    curve[i] = Math.tanh(amount * x);
+  }
+  return curve;
+}
+
+function applyModeAudio() {
+  const m = MODES[state.mode].audio;
+  if (state.staticGain) state.staticGain.gain.value = m.noise;
+  if (state.rxFilter) {
+    state.rxFilter.frequency.value = m.freq;
+    state.rxFilter.Q.value = m.q;
+  }
+  if (state.rxDistortion) {
+    state.rxDistortion.curve = makeDistortionCurve(m.dist);
+  }
+}
+
+// ---- Simple tone helpers ----
+function playTone(freq, dur = 0.1, vol = 0.22, type = 'sine', delay = 0) {
+  if (!state.ctx) return;
+  const ctx = state.ctx;
+  const t = ctx.currentTime + delay;
+  const osc = ctx.createOscillator();
+  const g = ctx.createGain();
+  osc.type = type; osc.frequency.value = freq;
+  g.gain.setValueAtTime(0, t);
+  g.gain.linearRampToValueAtTime(vol, t + 0.01);
+  g.gain.setValueAtTime(vol, t + dur - 0.02);
+  g.gain.linearRampToValueAtTime(0, t + dur);
+  osc.connect(g); g.connect(ctx.destination);
+  osc.start(t); osc.stop(t + dur + 0.02);
+}
+function playClick(freq = 180, dur = 0.04, vol = 0.12) {
+  if (!state.ctx) return;
+  const ctx = state.ctx;
+  const t = ctx.currentTime;
+  const osc = ctx.createOscillator();
+  const g = ctx.createGain();
+  osc.type = 'square'; osc.frequency.value = freq;
+  g.gain.setValueAtTime(vol, t);
+  g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+  osc.connect(g); g.connect(ctx.destination);
+  osc.start(t); osc.stop(t + dur + 0.01);
+}
+function playStaticBurst(dur = 0.18, vol = 0.2) {
+  if (!state.ctx) return;
+  const ctx = state.ctx;
+  const size = Math.floor(ctx.sampleRate * dur);
+  const buf = ctx.createBuffer(1, size, ctx.sampleRate);
+  const d = buf.getChannelData(0);
+  for (let i = 0; i < size; i++) d[i] = Math.random() * 2 - 1;
+  const src = ctx.createBufferSource();
+  src.buffer = buf;
+  const hp = ctx.createBiquadFilter();
+  hp.type = 'highpass'; hp.frequency.value = 800;
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(vol, ctx.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + dur);
+  src.connect(hp); hp.connect(g); g.connect(ctx.destination);
+  src.start();
+}
+function playSquelchOpen()  { playClick(140, 0.03, 0.14); setTimeout(() => playStaticBurst(0.12, 0.18), 10); }
+function playSquelchClose() { playStaticBurst(0.08, 0.12); setTimeout(() => playClick(110, 0.03, 0.12), 30); }
+
+// ---- Mode-specific beeps ----
+const BEEPS = {
+  policeSiren: () => {
+    playTone(880, 0.12, 0.24, 'square');
+    playTone(1320, 0.12, 0.24, 'square', 0.14);
+    playTone(880, 0.12, 0.24, 'square', 0.28);
+    playTone(1320, 0.16, 0.24, 'square', 0.42);
+  },
+  airHorn: () => {
+    playTone(180, 0.35, 0.28, 'sawtooth');
+    playTone(120, 0.35, 0.22, 'sawtooth');
+  },
+  ambulance: () => {
+    playTone(740, 0.16, 0.22, 'sine');
+    playTone(540, 0.16, 0.22, 'sine', 0.2);
+    playTone(740, 0.16, 0.22, 'sine', 0.4);
+    playTone(540, 0.2, 0.22, 'sine', 0.6);
+  },
+  spaceSweep: () => {
+    if (!state.ctx) return;
+    const ctx = state.ctx;
+    const t = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    const g = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(200, t);
+    osc.frequency.exponentialRampToValueAtTime(1800, t + 0.3);
+    osc.frequency.exponentialRampToValueAtTime(600, t + 0.6);
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(0.25, t + 0.05);
+    g.gain.linearRampToValueAtTime(0, t + 0.6);
+    const delay = ctx.createDelay(0.3);
+    delay.delayTime.value = 0.12;
+    const fb = ctx.createGain();
+    fb.gain.value = 0.4;
+    osc.connect(g);
+    g.connect(ctx.destination);
+    g.connect(delay);
+    delay.connect(fb);
+    fb.connect(delay);
+    delay.connect(ctx.destination);
+    osc.start(t); osc.stop(t + 0.7);
+  },
+  shipBell: () => {
+    playTone(520, 0.5, 0.22, 'triangle');
+    playTone(780, 0.5, 0.14, 'triangle', 0.02);
+    setTimeout(() => { playTone(520, 0.5, 0.22, 'triangle'); playTone(780, 0.5, 0.14, 'triangle'); }, 280);
+  },
+  ninjaStrike: () => {
+    playTone(3200, 0.05, 0.2, 'square');
+    playTone(1600, 0.06, 0.15, 'sawtooth', 0.03);
+    playStaticBurst(0.06, 0.14);
+  },
+};
+
+function playModeBeep() {
+  const fn = BEEPS[MODES[state.mode].beep];
+  if (fn) fn();
+}
+
+// ---- Startup sequence ----
+function playStartupSequence() {
+  if (!state.ctx) return;
+  playTone(440, 0.08, 0.18, 'square');
+  playTone(660, 0.08, 0.18, 'square', 0.1);
+  playTone(880, 0.08, 0.18, 'square', 0.2);
+  playTone(1320, 0.18, 0.22, 'square', 0.32);
+  setTimeout(() => playSquelchOpen(), 600);
+}
+function playShutdownSequence() {
+  if (!state.ctx) return;
+  playTone(880, 0.1, 0.18, 'square');
+  playTone(440, 0.14, 0.18, 'square', 0.12);
+  playTone(200, 0.2, 0.16, 'square', 0.28);
+}
+
+// ---- Morse SOS (· · · − − − · · ·) ----
+function playMorseSOS() {
+  if (!state.ctx) return;
+  const dit = 0.1, dah = 0.3, gap = 0.1, letterGap = 0.25;
+  let t = 0;
+  function blip(dur) {
+    playTone(700, dur, 0.28, 'sine', t);
+    t += dur + gap;
+  }
+  // S = dit dit dit
+  for (let i = 0; i < 3; i++) blip(dit);
+  t += letterGap - gap;
+  // O = dah dah dah
+  for (let i = 0; i < 3; i++) blip(dah);
+  t += letterGap - gap;
+  // S = dit dit dit
+  for (let i = 0; i < 3; i++) blip(dit);
+}
+
+// ============================================================
+//        VOICE EFFECT CHAIN (outgoing audio processing)
+// ============================================================
+
+function disposeEffectChain() {
+  if (!state.effectChain) return;
+  try { state.effectChain.nodes.forEach(n => { try { n.disconnect(); if (n.stop) n.stop(); } catch(e) {} }); } catch(e) {}
+  state.effectChain = null;
+  state.outMute = null;
+}
+
+function buildEffectChain(effectName) {
+  const ctx = state.ctx;
+  const input = ctx.createGain();   // raw mic source connects here
+  const mute  = ctx.createGain();
+  mute.gain.value = 0;              // start muted (tap-to-talk)
+  const output = ctx.createMediaStreamDestination();
+
+  const nodes = [input, mute];
+  let last = input;
+
+  const connect = (n) => { last.connect(n); last = n; nodes.push(n); };
+
+  switch (effectName) {
+    case 'NORMAL': {
+      // Raw → mute → output
+      break;
+    }
+    case 'ROBOTER': {
+      // Ring modulation: multiply signal by a sine wave
+      // Implemented with a GainNode whose gain is the oscillator output
+      const carrier = ctx.createOscillator();
+      carrier.frequency.value = 60;
+      carrier.type = 'sine';
+      const ringGain = ctx.createGain();
+      ringGain.gain.value = 0;      // overridden by oscillator
+      carrier.connect(ringGain.gain);
+      carrier.start();
+      connect(ringGain);
+      // Add a subtle bandpass to make it sound metallic
+      const bp = ctx.createBiquadFilter();
+      bp.type = 'bandpass'; bp.frequency.value = 1500; bp.Q.value = 2;
+      connect(bp);
+      break;
+    }
+    case 'TIEF': {
+      // Low-pass + slight delay + feedback ~ sounds deeper/chunkier
+      const lp = ctx.createBiquadFilter();
+      lp.type = 'lowpass'; lp.frequency.value = 700; lp.Q.value = 0.6;
+      connect(lp);
+      const sat = ctx.createWaveShaper();
+      sat.curve = makeDistortionCurve(2.5);
+      connect(sat);
+      break;
+    }
+    case 'HOCH': {
+      const hp = ctx.createBiquadFilter();
+      hp.type = 'highpass'; hp.frequency.value = 1400;
+      connect(hp);
+      const bp = ctx.createBiquadFilter();
+      bp.type = 'bandpass'; bp.frequency.value = 2800; bp.Q.value = 1.8;
+      connect(bp);
+      break;
+    }
+    case 'ALIEN': {
+      // Tremolo (LFO on gain) + distortion
+      const lfo = ctx.createOscillator();
+      lfo.frequency.value = 7;
+      const lfoDepth = ctx.createGain();
+      lfoDepth.gain.value = 0.5;
+      const tremGain = ctx.createGain();
+      tremGain.gain.value = 0.4;
+      lfo.connect(lfoDepth);
+      lfoDepth.connect(tremGain.gain);
+      lfo.start();
+      const dist = ctx.createWaveShaper();
+      dist.curve = makeDistortionCurve(5);
+      connect(dist);
+      connect(tremGain);
+      nodes.push(lfo, lfoDepth);
+      break;
+    }
+  }
+
+  last.connect(mute);
+  mute.connect(output);
+  nodes.push(output);
+
+  return { input, mute, output, nodes };
+}
+
+async function ensureMic() {
+  if (state.rawStream) return;
+  state.rawStream = await navigator.mediaDevices.getUserMedia({
+    audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+    video: false,
+  });
+}
+
+async function rebuildOutgoingStream() {
+  await initAudio();
+  await ensureMic();
+  disposeEffectChain();
+  const ctx = state.ctx;
+  const chain = buildEffectChain(EFFECTS[state.effect]);
+  state.effectChain = chain;
+  state.outMute = chain.mute;
+  // Connect raw mic source into the chain's input
+  const src = ctx.createMediaStreamSource(state.rawStream);
+  src.connect(chain.input);
+  chain.nodes.unshift(src);
+  state.outStream = chain.output.stream;
+  return state.outStream;
+}
+
+// ============================================================
+//        INCOMING AUDIO PROCESSING (radio effect)
+// ============================================================
+
+function processRemoteStream(stream) {
+  const ctx = state.ctx;
+  // Attach to a muted <audio> so MediaStreamSource actually produces audio
+  if (state.remoteAudioEl) {
+    try { state.remoteAudioEl.pause(); } catch(e) {}
+    state.remoteAudioEl.srcObject = null;
+    state.remoteAudioEl.remove();
+  }
+  const audioEl = document.createElement('audio');
+  audioEl.srcObject = stream;
+  audioEl.autoplay = true;
+  audioEl.muted = true;
+  audioEl.playsInline = true;
+  document.body.appendChild(audioEl);
+  state.remoteAudioEl = audioEl;
+
+  const source = ctx.createMediaStreamSource(stream);
+  const m = MODES[state.mode].audio;
+
+  const hs = ctx.createBiquadFilter();
+  hs.type = 'highpass'; hs.frequency.value = m.highpass;
+
+  const bp = ctx.createBiquadFilter();
+  bp.type = 'bandpass';
+  bp.frequency.value = m.freq;
+  bp.Q.value = m.q;
+  state.rxFilter = bp;
+
+  const dist = ctx.createWaveShaper();
+  dist.curve = makeDistortionCurve(m.dist);
+  dist.oversample = '2x';
+  state.rxDistortion = dist;
+
+  const analyser = ctx.createAnalyser();
+  analyser.fftSize = 512;
+  state.rxAnalyser = analyser;
+
+  const g = ctx.createGain();
+  g.gain.value = 1.6;
+
+  source.connect(hs);
+  hs.connect(bp);
+  bp.connect(dist);
+  dist.connect(analyser);
+  analyser.connect(g);
+  g.connect(ctx.destination);
+}
+
+// ============================================================
+//                    VISUALIZER (canvas)
+// ============================================================
+
+function setupViz() {
+  const cv = els.vizCanvas;
+  const dpr = window.devicePixelRatio || 1;
+  function resize() {
+    const r = cv.getBoundingClientRect();
+    cv.width  = Math.max(1, Math.floor(r.width * dpr));
+    cv.height = Math.max(1, Math.floor(r.height * dpr));
+  }
+  resize();
+  window.addEventListener('resize', resize);
+  const ctx2d = cv.getContext('2d');
+
+  function draw() {
+    requestAnimationFrame(draw);
+    const w = cv.width, h = cv.height;
+    ctx2d.clearRect(0, 0, w, h);
+
+    // Choose which analyser to read from
+    const analyser = state.transmitting ? state.txAnalyser : state.rxAnalyser;
+    let dataArr = null;
+    if (analyser) {
+      dataArr = new Uint8Array(analyser.frequencyBinCount);
+      analyser.getByteFrequencyData(dataArr);
+    }
+
+    // Read CSS variable for glow color
+    const style = getComputedStyle(document.body);
+    const primary = style.getPropertyValue('--primary').trim() || '#2a6fff';
+    const accent = style.getPropertyValue('--accent').trim() || '#ff2a3a';
+    const col = state.transmitting ? accent : primary;
+
+    // Draw radial bar visualizer from bottom center
+    const cx = w / 2;
+    const cy = h * 0.92;
+    const bars = 48;
+    const maxLen = h * 0.65;
+
+    ctx2d.strokeStyle = col;
+    ctx2d.shadowColor = col;
+    ctx2d.shadowBlur = 8 * dpr;
+    ctx2d.lineWidth = Math.max(1.5, 3 * dpr);
+    ctx2d.lineCap = 'round';
+
+    for (let i = 0; i < bars; i++) {
+      const a = Math.PI + (i / (bars - 1)) * Math.PI; // top half arc (π .. 2π)
+      let v = 0;
+      if (dataArr) v = dataArr[Math.floor((i / bars) * dataArr.length * 0.7)] / 255;
+      else v = 0.05 + Math.sin(performance.now() * 0.002 + i * 0.35) * 0.04 + Math.random() * 0.03;
+      const len = maxLen * v;
+      const r1 = Math.min(w, h) * 0.30;
+      const r2 = r1 + len;
+      const x1 = cx + Math.cos(a) * r1;
+      const y1 = cy + Math.sin(a) * r1;
+      const x2 = cx + Math.cos(a) * r2;
+      const y2 = cy + Math.sin(a) * r2;
+      ctx2d.globalAlpha = 0.45 + v * 0.55;
+      ctx2d.beginPath();
+      ctx2d.moveTo(x1, y1);
+      ctx2d.lineTo(x2, y2);
+      ctx2d.stroke();
+    }
+    ctx2d.globalAlpha = 1;
+    ctx2d.shadowBlur = 0;
+  }
+  draw();
+}
+
+// ============================================================
+//                    PEERJS / WEBRTC
+// ============================================================
+
+function initPeer() {
+  state.peer = new Peer(undefined, { debug: 1 });
+
+  state.peer.on('open', (id) => {
+    state.myId = id;
+    setConn('ready');
+    toast('Funkgerät bereit · SIG OK');
+    els.sigTag.textContent = 'SIG: READY';
+  });
+
+  state.peer.on('call', async (incoming) => {
+    try {
+      const stream = await rebuildOutgoingStream();
+      incoming.answer(stream);
+      state.call = incoming;
+      bindCall(incoming);
+    } catch (e) {
+      console.error(e); toast('Mikrofon verweigert');
+    }
+  });
+
+  state.peer.on('connection', (dc) => { state.conn = dc; bindDataConn(dc); });
+
+  state.peer.on('error', (err) => {
+    console.error('peer err', err);
+    if (err.type === 'peer-unavailable') { toast('Kein Gerät unter diesem Code'); setConn('ready'); }
+    else if (err.type === 'network' || err.type === 'disconnected') { toast('Netzwerkfehler'); }
+    else toast('Fehler: ' + err.type);
+  });
+  state.peer.on('disconnected', () => { setConn('ready'); });
+}
+
+function bindCall(call) {
+  call.on('stream', (remoteStream) => {
+    state.remoteStream = remoteStream;
+    processRemoteStream(remoteStream);
+    state.connected = true;
+    setConn('connected');
+    setTalk('on');
+    els.sigTag.textContent = 'SIG: ████';
+    playSquelchOpen();
+    toast('Verbunden!');
+  });
+  call.on('close', () => {
+    state.connected = false;
+    setConn('ready');
+    setTalk('off');
+    stopTransmit();
+    els.sigTag.textContent = 'SIG: READY';
+    playSquelchClose();
+    toast('Getrennt');
+  });
+  call.on('error', (e) => { console.error(e); toast('Call-Fehler'); });
+}
+
+function bindDataConn(dc) {
+  dc.on('open', () => {});
+  dc.on('data', (msg) => {
+    try {
+      const obj = (typeof msg === 'string') ? JSON.parse(msg) : msg;
+      if (obj.type === 'ring') {
+        playModeBeep();
+        toast('📢 RUF empfangen');
+        if (navigator.vibrate) navigator.vibrate([60, 40, 60]);
+      } else if (obj.type === 'mode') {
+        state.mode = obj.mode;
+        applyMode(false);
+      } else if (obj.type === 'sos') {
+        playMorseSOS();
+        toast('🆘 SOS empfangen');
+        if (navigator.vibrate) navigator.vibrate([120, 80, 120, 80, 120]);
+      }
+    } catch(e) { console.error(e); }
+  });
+  dc.on('close', () => { state.conn = null; });
+}
+
+async function connectToPeer(otherId) {
+  if (!otherId || otherId === state.myId) { toast('Ungültiger Code'); return; }
+  setConn('connecting');
+  try {
+    const dc = state.peer.connect(otherId);
+    state.conn = dc; bindDataConn(dc);
+    const stream = await rebuildOutgoingStream();
+    const call = state.peer.call(otherId, stream);
+    state.call = call;
+    bindCall(call);
+  } catch (e) {
+    console.error(e);
+    toast('Verbindung fehlgeschlagen');
+    setConn('ready');
+  }
+}
+
+// ============================================================
+//                    UI HELPERS
+// ============================================================
+
+function setConn(s) { els.body.dataset.conn = s; }
+function setTalk(s) { els.body.dataset.talk = s; }   // 'on' means talk button is usable
+function setTx(on)  { els.body.dataset.tx = on ? '1' : '0'; }
+
+function applyMode(broadcast = true) {
+  const m = MODES[state.mode];
+  els.body.dataset.mode = m.id;
+  els.modeIcon.textContent = m.icon;
+  els.modeName.textContent = m.name;
+  els.chBig.textContent = String(state.mode + 1).padStart(2, '0');
+  els.chSmall.textContent = 'KANAL · ' + m.name;
+  applyModeAudio();
+  playClick(300, 0.03, 0.1);
+  setTimeout(() => playStaticBurst(0.08, 0.12), 30);
+  if (navigator.vibrate) navigator.vibrate(10);
+  if (broadcast && state.conn && state.conn.open) {
+    state.conn.send({ type: 'mode', mode: state.mode });
+  }
+}
+
+function cycleMode(delta) {
+  state.mode = (state.mode + delta + MODES.length) % MODES.length;
+  applyMode(true);
+}
+
+async function cycleEffect() {
+  state.effect = (state.effect + 1) % EFFECTS.length;
+  els.fxLabel.textContent = EFFECTS[state.effect];
+  els.fxTag.textContent = 'FX: ' + EFFECTS[state.effect];
+  playClick(420, 0.04, 0.12);
+  toast('Effekt: ' + EFFECTS[state.effect]);
+  if (navigator.vibrate) navigator.vibrate(8);
+
+  // Rebuild outgoing stream so the new effect applies
+  if (state.connected && state.call) {
+    try {
+      const newStream = await rebuildOutgoingStream();
+      const sender = state.call.peerConnection
+        .getSenders().find(s => s.track && s.track.kind === 'audio');
+      if (sender) await sender.replaceTrack(newStream.getAudioTracks()[0]);
+      // Restore transmit state
+      if (state.outMute) state.outMute.gain.value = state.transmitting ? 1 : 0;
+    } catch (e) { console.error(e); }
+  }
+}
+
+// ---------- TAP-TO-TALK (toggle, kid-friendly) ----------
+function onTalkTap() {
+  if (!state.connected || !state.outMute) {
+    playClick(100, 0.05, 0.1);
+    toast('Zuerst verbinden!');
+    return;
+  }
+  if (state.transmitting) stopTransmit();
+  else startTransmit();
+}
+
+function startTransmit() {
+  if (!state.outMute) return;
+  state.transmitting = true;
+  state.outMute.gain.setTargetAtTime(1, state.ctx.currentTime, 0.01);
+  setTx(true);
+  els.talkIcon.textContent = '🔴';
+  els.talkMain.textContent = 'STOPP';
+  els.talkSub.textContent = 'nochmal tippen';
+  playSquelchOpen();
+  if (navigator.vibrate) navigator.vibrate(30);
+}
+function stopTransmit() {
+  if (!state.transmitting) return;
+  state.transmitting = false;
+  if (state.outMute) state.outMute.gain.setTargetAtTime(0, state.ctx.currentTime, 0.01);
+  setTx(false);
+  els.talkIcon.textContent = '🎙';
+  els.talkMain.textContent = 'TIPPEN';
+  els.talkSub.textContent = 'um zu sprechen';
+  playSquelchClose();
+}
+
+// ---------- Call (ring) ----------
+function sendRing() {
+  if (state.conn && state.conn.open) {
+    state.conn.send({ type: 'ring' });
+  }
+  playModeBeep();
+  if (navigator.vibrate) navigator.vibrate([40, 30, 40]);
+  if (!state.connected) toast('Kein Gerät verbunden');
+}
+
+// ---------- SOS ----------
+function sendSOS() {
+  if (state.conn && state.conn.open) state.conn.send({ type: 'sos' });
+  playMorseSOS();
+  toast('🆘 SOS gesendet');
+  if (navigator.vibrate) navigator.vibrate([100, 60, 100, 60, 100]);
+}
+
+// ---------- QR ----------
+function showMyQr() {
+  if (!state.myId) { toast('Noch nicht bereit'); return; }
+  els.peerIdText.textContent = state.myId;
+  QRCode.toCanvas(els.qrCanvas, state.myId, { width: 240, margin: 2, color: { dark: '#000', light: '#fff' } }, (err) => {
+    if (err) { console.error(err); toast('QR-Fehler'); return; }
+    els.qrModal.classList.remove('hidden');
+  });
+}
+function closeMyQr() { els.qrModal.classList.add('hidden'); }
+
+async function openScanner() {
+  els.scanModal.classList.remove('hidden');
+  try {
+    if (!state.scanner) state.scanner = new Html5Qrcode('reader');
+    await state.scanner.start(
+      { facingMode: 'environment' },
+      { fps: 10, qrbox: { width: 220, height: 220 } },
+      (txt) => onScanSuccess(txt),
+      () => {}
+    );
+  } catch (e) {
+    console.error(e); toast('Kamera nicht verfügbar'); closeScanner();
+  }
+}
+async function closeScanner() {
+  if (state.scanner) { try { await state.scanner.stop(); await state.scanner.clear(); } catch(e) {} }
+  els.scanModal.classList.add('hidden');
+}
+async function onScanSuccess(txt) {
+  await closeScanner();
+  toast('Code gescannt');
+  connectToPeer(String(txt).trim());
+}
+
+// ---------- Power ----------
+async function powerOn() {
+  els.startModal.classList.add('hidden');
+  els.body.dataset.state = 'on';
+  try { await initAudio(); } catch(e) { console.error(e); toast('Audio-Fehler'); return; }
+  try {
+    const s = await navigator.mediaDevices.getUserMedia({ audio: true });
+    s.getTracks().forEach(t => t.stop()); // only for permission prompt
+  } catch(e) { toast('Mikrofon nötig!'); }
+
+  playStartupSequence();
+  state.powered = true;
+  applyMode(false);
+  initPeer();
+  setupViz();
+  setInterval(updateClock, 1000);
+  updateClock();
+}
+
+function powerOff() {
+  if (!state.powered) return;
+  playShutdownSequence();
+  stopTransmit();
+  try { if (state.call) state.call.close(); } catch(e) {}
+  try { if (state.conn) state.conn.close(); } catch(e) {}
+  try { if (state.peer) state.peer.destroy(); } catch(e) {}
+  try { if (state.rawStream) state.rawStream.getTracks().forEach(t => t.stop()); } catch(e) {}
+  try { if (state.remoteAudioEl) { state.remoteAudioEl.srcObject = null; state.remoteAudioEl.remove(); } } catch(e) {}
+  disposeEffectChain();
+  state.peer = null; state.call = null; state.conn = null;
+  state.rawStream = null; state.remoteStream = null; state.remoteAudioEl = null;
+  state.connected = false; state.powered = false;
+  setConn('off'); setTalk('off'); setTx(false);
+  setTimeout(() => {
+    els.body.dataset.state = 'off';
+    els.startModal.classList.remove('hidden');
+  }, 600);
+}
+
+// ============================================================
+//                        WIRE-UP
+// ============================================================
+
+els.startBtn.addEventListener('click', powerOn);
+els.powerBtn.addEventListener('click', powerOff);
+els.talkBtn.addEventListener('click', onTalkTap);
+// Also support spacebar (dev/testing)
+window.addEventListener('keydown', (e) => {
+  if (e.code === 'Space' && !e.repeat) { e.preventDefault(); onTalkTap(); }
+});
+
+els.modePrevBtn.addEventListener('click', () => cycleMode(-1));
+els.modeNextBtn.addEventListener('click', () => cycleMode(+1));
+els.callBtn.addEventListener('click', sendRing);
+els.qrBtn.addEventListener('click', showMyQr);
+els.scanBtn.addEventListener('click', openScanner);
+els.fxBtn.addEventListener('click', cycleEffect);
+els.sosBtn.addEventListener('click', sendSOS);
+els.closeQrBtn.addEventListener('click', closeMyQr);
+els.closeScanBtn.addEventListener('click', closeScanner);
+
+document.addEventListener('dblclick', (e) => e.preventDefault());
+document.addEventListener('gesturestart', (e) => e.preventDefault());
+
+// Lock orientation if possible
+if (screen.orientation && screen.orientation.lock) {
+  screen.orientation.lock('portrait').catch(() => {});
+}
+
+// Build background decorations
+buildEmbers();
+buildTwinkles();
+
+// Register service worker
+if ('serviceWorker' in navigator && location.protocol === 'https:') {
+  navigator.serviceWorker.register('sw.js').catch(() => {});
+}
+</script>
+</body>
+</html>

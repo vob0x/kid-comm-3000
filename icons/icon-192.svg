@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="40%" r="70%">
+      <stop offset="0%" stop-color="#1a2450"/>
+      <stop offset="60%" stop-color="#040814"/>
+      <stop offset="100%" stop-color="#000000"/>
+    </radialGradient>
+    <linearGradient id="glow" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#00e4ff"/>
+      <stop offset="100%" stop-color="#7a3fff"/>
+    </linearGradient>
+  </defs>
+  <rect width="192" height="192" rx="42" ry="42" fill="url(#bg)"/>
+  <circle cx="96" cy="96" r="62" fill="none" stroke="url(#glow)" stroke-width="3" opacity="0.6"/>
+  <circle cx="96" cy="96" r="48" fill="none" stroke="url(#glow)" stroke-width="2" opacity="0.4"/>
+  <text x="96" y="122" font-size="80" text-anchor="middle" font-family="Helvetica, Arial, sans-serif">📻</text>
+  <text x="96" y="168" font-size="13" text-anchor="middle" fill="#00e4ff" font-family="Courier New, monospace" font-weight="bold" letter-spacing="2">KID·COMM</text>
+</svg>

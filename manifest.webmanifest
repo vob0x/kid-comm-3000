@@ -1,0 +1,33 @@
+{
+  "name": "KID COMM 3000",
+  "short_name": "KID COMM",
+  "description": "Futuristisches Walkie-Talkie fuer Kinder mit 6 Modi (Polizei, Feuerwehr, Rettung, Astronaut, Piraten, Ninja). Verbindung per QR-Code.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#000000",
+  "theme_color": "#000000",
+  "lang": "de",
+  "categories": ["games", "kids", "communication"],
+  "icons": [
+    {
+      "src": "icons/icon-192.svg",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/icon-512.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/icon-maskable-512.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ]
+}
