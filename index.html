@@ -116,18 +116,18 @@ body[data-mode="piraten"] {
   --text: #ffe6b8;
   --text-dim: #a08050;
 }
-/* ---------- THEME: NINJA ---------- */
-body[data-mode="ninja"] {
-  --primary: #ff1530;
-  --primary-glow: rgba(255, 21, 48, 0.8);
-  --accent: #ffffff;
-  --accent-glow: rgba(255, 255, 255, 0.6);
+/* ---------- THEME: GEHEIMAGENT ---------- */
+body[data-mode="geheim"] {
+  --primary: #00ff88;
+  --primary-glow: rgba(0, 255, 136, 0.75);
+  --accent: #c8ffdd;
+  --accent-glow: rgba(200, 255, 221, 0.6);
   --bg-deep: #000000;
-  --bg-mid: #0a0000;
-  --surface: rgba(20, 0, 0, 0.7);
-  --surface-border: rgba(255, 21, 48, 0.45);
-  --text: #ffe8e8;
-  --text-dim: #906060;
+  --bg-mid: #041a0d;
+  --surface: rgba(0, 30, 15, 0.7);
+  --surface-border: rgba(0, 255, 136, 0.45);
+  --text: #d5ffe5;
+  --text-dim: #5a9a78;
 }
 
 /* ============================================================
@@ -147,7 +147,7 @@ body[data-mode="feuerwehr"] .bg-feuerwehr { display: block; }
 body[data-mode="rettung"]   .bg-rettung   { display: block; }
 body[data-mode="astronaut"] .bg-astronaut { display: block; }
 body[data-mode="piraten"]   .bg-piraten   { display: block; }
-body[data-mode="ninja"]     .bg-ninja     { display: block; }
+body[data-mode="geheim"]    .bg-geheim    { display: block; }
 
 /* ---- POLIZEI bg: alternating strobes ---- */
 .strobe {
@@ -336,40 +336,48 @@ body[data-mode="ninja"]     .bg-ninja     { display: block; }
   50% { transform: rotate(5deg); }
 }
 
-/* ---- NINJA bg: dark + scan line + shuriken ---- */
-.bg-ninja::before {
+/* ---- GEHEIMAGENT bg: matrix-grid + radar sweep + classified stamp ---- */
+.bg-geheim::before {
   content: '';
   position: absolute;
   inset: 0;
   background:
-    radial-gradient(ellipse at center, rgba(60, 0, 0, 0.25) 0%, transparent 70%),
-    repeating-linear-gradient(0deg, rgba(255, 0, 0, 0.02) 0, rgba(255, 0, 0, 0.02) 1px, transparent 1px, transparent 3px);
+    radial-gradient(ellipse at center, rgba(0, 80, 40, 0.25) 0%, transparent 70%),
+    repeating-linear-gradient(0deg, rgba(0, 255, 136, 0.04) 0, rgba(0, 255, 136, 0.04) 1px, transparent 1px, transparent 24px),
+    repeating-linear-gradient(90deg, rgba(0, 255, 136, 0.04) 0, rgba(0, 255, 136, 0.04) 1px, transparent 1px, transparent 24px);
 }
-.ninja-scan {
+.radar-sweep {
   position: absolute;
-  left: 0; right: 0;
-  height: 2px;
-  background: linear-gradient(90deg, transparent, var(--primary), transparent);
-  box-shadow: 0 0 20px var(--primary);
-  animation: ninjaScan 4s linear infinite;
+  top: 50%;
+  left: 50%;
+  width: 140vmax;
+  height: 140vmax;
+  transform-origin: 0 0;
+  background: conic-gradient(from 0deg, rgba(0, 255, 136, 0.28) 0deg, transparent 40deg, transparent 360deg);
+  animation: radarSpin 4.5s linear infinite;
+  opacity: 0.35;
+  pointer-events: none;
 }
-@keyframes ninjaScan {
-  0%   { top: 0%; opacity: 0; }
-  5%   { opacity: 1; }
-  95%  { opacity: 1; }
-  100% { top: 100%; opacity: 0; }
+@keyframes radarSpin {
+  from { transform: translate(-50%, -50%) rotate(0deg); }
+  to   { transform: translate(-50%, -50%) rotate(360deg); }
 }
-.shuriken {
+.classified {
   position: absolute;
-  top: 15%;
-  right: 10%;
-  font-size: 100px;
-  opacity: 0.08;
-  animation: spin 12s linear infinite;
-}
-@keyframes spin {
-  from { transform: rotate(0deg); }
-  to   { transform: rotate(360deg); }
+  top: 14%;
+  right: 8%;
+  font-family: 'Orbitron', sans-serif;
+  font-size: 38px;
+  font-weight: 900;
+  letter-spacing: 6px;
+  color: var(--primary);
+  border: 4px solid var(--primary);
+  padding: 6px 14px;
+  opacity: 0.14;
+  transform: rotate(-14deg);
+  text-shadow: 0 0 12px var(--primary-glow);
+  box-shadow: 0 0 12px var(--primary-glow);
+  pointer-events: none;
 }
 
 /* ============================================================
@@ -400,17 +408,25 @@ body[data-mode="ninja"]     .bg-ninja     { display: block; }
   box-shadow: 0 0 20px rgba(0, 0, 0, 0.5), inset 0 0 20px rgba(0, 0, 0, 0.3);
 }
 .power-btn {
-  width: 40px;
-  height: 40px;
+  width: 46px;
+  height: 46px;
   border-radius: 50%;
   background: linear-gradient(145deg, rgba(255, 255, 255, 0.12), rgba(0, 0, 0, 0.4));
   border: 1.5px solid var(--surface-border);
-  color: var(--text);
-  font-size: 20px;
-  line-height: 1;
+  color: var(--primary);
   cursor: pointer;
   box-shadow: 0 0 10px rgba(0, 0, 0, 0.5), inset 0 1px 1px rgba(255, 255, 255, 0.2);
   transition: all 150ms;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+.power-btn svg {
+  width: 26px;
+  height: 26px;
+  display: block;
+  filter: drop-shadow(0 0 6px var(--primary-glow));
 }
 .power-btn:active { transform: scale(0.92); }
 
@@ -422,13 +438,17 @@ body[data-mode="ninja"]     .bg-ninja     { display: block; }
   color: var(--primary);
   text-shadow: 0 0 10px var(--primary-glow), 0 0 20px var(--primary-glow);
   font-weight: 900;
-  font-size: 18px;
+  font-size: 15px;
   letter-spacing: 2px;
 }
 .mode-icon {
-  font-size: 26px;
-  filter: drop-shadow(0 0 8px var(--primary-glow));
+  font-size: 36px;
+  filter: drop-shadow(0 0 10px var(--primary-glow));
+  line-height: 1;
 }
+.mode-name { opacity: 0.85; }
+.conn-label { display: none; }
+.ch-small { display: none; }
 .conn-indicator {
   display: flex;
   align-items: center;
@@ -526,43 +546,87 @@ body[data-tx="1"] .ct-tr::before { opacity: 1; }
 .talk-btn {
   position: relative;
   width: 100%;
-  max-width: 360px;
-  height: 100px;
-  border-radius: 22px;
-  border: 2px solid var(--primary);
+  max-width: 380px;
+  height: 150px;
+  border-radius: 26px;
+  border: 3px solid var(--primary);
   background:
     radial-gradient(ellipse at center, var(--primary-glow) 0%, transparent 65%),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.1), rgba(0, 0, 0, 0.4));
+    linear-gradient(180deg, rgba(255, 255, 255, 0.12), rgba(0, 0, 0, 0.45));
   color: #fff;
-  font-family: 'Orbitron', monospace;
-  font-weight: 900;
-  font-size: 22px;
-  letter-spacing: 2px;
   cursor: pointer;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 14px;
+  gap: 2px;
   overflow: hidden;
   box-shadow:
-    0 0 30px var(--primary-glow),
-    inset 0 0 20px rgba(255, 255, 255, 0.15),
+    0 0 40px var(--primary-glow),
+    inset 0 0 30px rgba(255, 255, 255, 0.15),
     inset 0 -4px 12px rgba(0, 0, 0, 0.4);
-  text-shadow: 0 0 8px rgba(0, 0, 0, 0.8);
   transition: all 160ms;
 }
 .talk-icon {
-  font-size: 38px;
-  filter: drop-shadow(0 0 10px #fff);
+  font-size: 64px;
+  line-height: 1;
+  filter: drop-shadow(0 0 14px #fff) drop-shadow(0 0 24px var(--primary-glow));
+  position: relative;
+  z-index: 2;
 }
-.talk-label { text-align: left; line-height: 1.1; }
-.talk-label small { display: block; font-size: 11px; letter-spacing: 1px; font-weight: 400; opacity: 0.75; }
+.talk-label {
+  font-family: 'Orbitron', monospace;
+  font-size: 26px;
+  font-weight: 900;
+  letter-spacing: 4px;
+  color: #fff;
+  text-shadow: 0 0 12px var(--primary-glow), 0 0 4px #000, 0 2px 2px rgba(0,0,0,0.8);
+  position: relative;
+  z-index: 2;
+  margin-top: 2px;
+}
+.talk-ring {
+  position: absolute;
+  inset: 10px;
+  border-radius: 20px;
+  border: 2px solid rgba(255, 255, 255, 0.25);
+  pointer-events: none;
+}
 .talk-btn::after {
   content: '';
   position: absolute;
   inset: 0;
   background: radial-gradient(ellipse at 30% 30%, rgba(255, 255, 255, 0.25), transparent 60%);
   pointer-events: none;
+}
+
+/* Breathe animation when connected and idle — invites tapping */
+body[data-conn="connected"][data-tx="0"] .talk-btn {
+  animation: talkBreathe 2.2s ease-in-out infinite;
+}
+@keyframes talkBreathe {
+  0%, 100% {
+    box-shadow:
+      0 0 40px var(--primary-glow),
+      inset 0 0 30px rgba(255, 255, 255, 0.15),
+      inset 0 -4px 12px rgba(0, 0, 0, 0.4);
+    transform: scale(1);
+  }
+  50% {
+    box-shadow:
+      0 0 70px var(--primary-glow),
+      0 0 25px var(--primary-glow),
+      inset 0 0 50px rgba(255, 255, 255, 0.3),
+      inset 0 -4px 12px rgba(0, 0, 0, 0.4);
+    transform: scale(1.02);
+  }
+}
+body[data-conn="connected"][data-tx="0"] .talk-ring {
+  animation: talkRingPulse 2.2s ease-in-out infinite;
+}
+@keyframes talkRingPulse {
+  0%, 100% { border-color: rgba(255, 255, 255, 0.2); }
+  50% { border-color: rgba(255, 255, 255, 0.65); }
 }
 
 body[data-tx="1"] .talk-btn {
@@ -590,66 +654,66 @@ body[data-talk="off"] .talk-btn {
 /* ---- Mid controls row ---- */
 .ctrl-row {
   display: grid;
-  grid-template-columns: 60px 1fr 60px;
+  grid-template-columns: 68px 1fr 68px;
   gap: 10px;
   align-items: center;
 }
 .nav-btn, .call-btn {
   background: var(--surface);
   border: 1.5px solid var(--surface-border);
-  border-radius: 10px;
-  color: var(--text);
-  font-family: 'Orbitron', monospace;
-  font-weight: 700;
-  font-size: 14px;
-  letter-spacing: 2px;
-  padding: 12px 4px;
+  border-radius: 14px;
+  color: var(--primary);
+  font-size: 30px;
+  line-height: 1;
+  padding: 16px 4px;
   cursor: pointer;
   backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4), inset 0 1px 1px rgba(255, 255, 255, 0.1);
   transition: all 100ms;
+  text-shadow: 0 0 10px var(--primary-glow);
 }
-.nav-btn { font-size: 20px; padding: 12px 0; color: var(--primary); text-shadow: 0 0 8px var(--primary-glow); }
 .call-btn {
   color: var(--accent);
-  text-shadow: 0 0 8px var(--accent-glow);
+  font-size: 34px;
+  text-shadow: 0 0 12px var(--accent-glow);
   border-color: var(--accent);
-  box-shadow: 0 0 15px var(--accent-glow), inset 0 1px 1px rgba(255, 255, 255, 0.15);
+  box-shadow: 0 0 18px var(--accent-glow), inset 0 1px 1px rgba(255, 255, 255, 0.15);
 }
 .nav-btn:active, .call-btn:active {
   transform: scale(0.95);
   background: rgba(255, 255, 255, 0.1);
 }
 
-/* ---- Bottom row ---- */
+/* ---- Bottom row (icons only) ---- */
 .bottom-row {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 8px;
+  gap: 10px;
 }
 .mini-btn {
   background: var(--surface);
   border: 1px solid var(--surface-border);
-  border-radius: 10px;
+  border-radius: 14px;
   color: var(--text);
-  font-family: 'Share Tech Mono', monospace;
-  font-size: 10px;
-  letter-spacing: 1px;
-  padding: 10px 2px;
+  font-size: 30px;
+  line-height: 1;
+  padding: 14px 2px;
   cursor: pointer;
   backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);
   display: flex;
-  flex-direction: column;
   align-items: center;
-  gap: 4px;
+  justify-content: center;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
   transition: all 100ms;
 }
-.mini-btn .mb-icon { font-size: 20px; }
 .mini-btn:active { transform: scale(0.94); background: rgba(255, 255, 255, 0.1); }
-#sosBtn { color: var(--danger); border-color: var(--danger); }
+#sosBtn {
+  color: var(--danger);
+  border-color: var(--danger);
+  box-shadow: 0 0 14px rgba(255, 42, 58, 0.4), inset 0 1px 1px rgba(255, 255, 255, 0.1);
+}
 
 /* ============================================================
    MODALS
@@ -714,11 +778,20 @@ body[data-talk="off"] .talk-btn {
   border-color: #555;
   box-shadow: none;
 }
-#qrCanvas {
+#qrHolder {
   background: #fff;
   padding: 14px;
   border-radius: 10px;
   margin: 12px auto;
+  width: 268px;
+  height: 268px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+#qrHolder svg, #qrHolder img {
+  width: 240px;
+  height: 240px;
   display: block;
 }
 #peerIdText {
@@ -845,9 +918,9 @@ body[data-state="on"] #startModal { display: none; }
     <!-- twinkles injected by JS -->
   </div>
   <div class="bg-layer bg-piraten"></div>
-  <div class="bg-layer bg-ninja">
-    <div class="ninja-scan"></div>
-    <div class="shuriken">✦</div>
+  <div class="bg-layer bg-geheim">
+    <div class="radar-sweep"></div>
+    <div class="classified">CLASSIFIED</div>
   </div>
 </div>
 
@@ -855,7 +928,12 @@ body[data-state="on"] #startModal { display: none; }
 <div class="hud">
 
   <div class="top-bar">
-    <button class="power-btn" id="powerBtn" title="Ausschalten">⏻</button>
+    <button class="power-btn" id="powerBtn" title="Ausschalten" aria-label="Ausschalten">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 3v10"/>
+        <path d="M18.36 7.64a9 9 0 1 1-12.73 0"/>
+      </svg>
+    </button>
     <div class="mode-title">
       <span class="mode-icon" id="modeIcon">🚓</span>
       <span class="mode-name" id="modeName">POLIZEI</span>
@@ -879,26 +957,24 @@ body[data-state="on"] #startModal { display: none; }
   </div>
 
   <div class="talk-area">
-    <button class="talk-btn" id="talkBtn">
+    <button class="talk-btn" id="talkBtn" aria-label="Sprechen">
+      <span class="talk-ring"></span>
       <span class="talk-icon" id="talkIcon">🎙</span>
-      <span class="talk-label">
-        <span id="talkMain">TIPPEN</span>
-        <small id="talkSub">um zu sprechen</small>
-      </span>
+      <span class="talk-label" id="talkLabel">SPRECHEN</span>
     </button>
   </div>
 
   <div class="ctrl-row">
-    <button class="nav-btn" id="modePrevBtn">◀</button>
-    <button class="call-btn" id="callBtn">📢 RUF</button>
-    <button class="nav-btn" id="modeNextBtn">▶</button>
+    <button class="nav-btn" id="modePrevBtn" aria-label="Vorheriger Kanal">◀</button>
+    <button class="call-btn" id="callBtn" aria-label="Anrufen">📢</button>
+    <button class="nav-btn" id="modeNextBtn" aria-label="Nächster Kanal">▶</button>
   </div>
 
   <div class="bottom-row">
-    <button class="mini-btn" id="qrBtn"><span class="mb-icon">📡</span>CODE</button>
-    <button class="mini-btn" id="scanBtn"><span class="mb-icon">📷</span>SCAN</button>
-    <button class="mini-btn" id="fxBtn"><span class="mb-icon">🎭</span><span id="fxLabel">NORMAL</span></button>
-    <button class="mini-btn" id="sosBtn"><span class="mb-icon">🆘</span>SOS</button>
+    <button class="mini-btn" id="qrBtn" aria-label="Mein Code zeigen">📡</button>
+    <button class="mini-btn" id="scanBtn" aria-label="Code scannen">📷</button>
+    <button class="mini-btn" id="fxBtn" aria-label="Stimmen-Effekt">🎭</button>
+    <button class="mini-btn" id="sosBtn" aria-label="SOS senden">🆘</button>
   </div>
 
 </div>
@@ -918,7 +994,7 @@ body[data-state="on"] #startModal { display: none; }
 <div class="modal hidden" id="qrModal">
   <div class="modal-box">
     <h2>DEIN FUNK-CODE</h2>
-    <canvas id="qrCanvas"></canvas>
+    <div id="qrHolder"></div>
     <p>Dein Freund scannt diesen Code mit "SCAN".</p>
     <p id="peerIdText">—</p>
     <button id="closeQrBtn">SCHLIESSEN</button>
@@ -938,7 +1014,7 @@ body[data-state="on"] #startModal { display: none; }
 
 <!-- External libs -->
 <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 
 <script>
@@ -975,9 +1051,9 @@ const MODES = [
     beep: 'shipBell',
   },
   {
-    id: 'ninja', name: 'NINJA', icon: '🥷',
-    audio: { freq: 2200, q: 1.5, noise: 0.005, dist: 2.8, highpass: 800 },
-    beep: 'ninjaStrike',
+    id: 'geheim', name: 'GEHEIMAGENT', icon: '🕵️',
+    audio: { freq: 1400, q: 1.2, noise: 0.009, dist: 2.2, highpass: 500 },
+    beep: 'spyLock',
   },
 ];
 
@@ -1020,22 +1096,20 @@ const els = {
   chSmall: $('chSmall'),
   talkBtn: $('talkBtn'),
   talkIcon: $('talkIcon'),
-  talkMain: $('talkMain'),
-  talkSub: $('talkSub'),
+  talkLabel: $('talkLabel'),
   modePrevBtn: $('modePrevBtn'),
   modeNextBtn: $('modeNextBtn'),
   callBtn: $('callBtn'),
   qrBtn: $('qrBtn'),
   scanBtn: $('scanBtn'),
   fxBtn: $('fxBtn'),
-  fxLabel: $('fxLabel'),
   fxTag: $('fxTag'),
   sosBtn: $('sosBtn'),
   powerBtn: $('powerBtn'),
   startBtn: $('startBtn'),
   startModal: $('startModal'),
   qrModal: $('qrModal'),
-  qrCanvas: $('qrCanvas'),
+  qrHolder: $('qrHolder'),
   peerIdText: $('peerIdText'),
   closeQrBtn: $('closeQrBtn'),
   scanModal: $('scanModal'),
@@ -1239,10 +1313,13 @@ const BEEPS = {
     playTone(780, 0.5, 0.14, 'triangle', 0.02);
     setTimeout(() => { playTone(520, 0.5, 0.22, 'triangle'); playTone(780, 0.5, 0.14, 'triangle'); }, 280);
   },
-  ninjaStrike: () => {
-    playTone(3200, 0.05, 0.2, 'square');
-    playTone(1600, 0.06, 0.15, 'sawtooth', 0.03);
-    playStaticBurst(0.06, 0.14);
+  spyLock: () => {
+    // 3 quick blips (computer access) then a descending "lock" beep
+    playTone(1800, 0.05, 0.14, 'square', 0.00);
+    playTone(1800, 0.05, 0.14, 'square', 0.08);
+    playTone(1800, 0.05, 0.14, 'square', 0.16);
+    playTone(900, 0.18, 0.18, 'sawtooth', 0.26);
+    playTone(500, 0.22, 0.20, 'sawtooth', 0.32);
   },
 };
 
@@ -1528,8 +1605,24 @@ function setupViz() {
 //                    PEERJS / WEBRTC
 // ============================================================
 
+// Optional TURN/STUN config. The default STUN servers are free
+// public Google servers. To add TURN (needed for ~10-15% of
+// mobile networks behind strict NATs / CGNAT), add an entry like:
+//   { urls: 'turn:your.turnserver.com:3478', username: 'u', credential: 'p' }
+// See README.md > "TURN-Server einrichten" for providers.
+const ICE_SERVERS = [
+  { urls: 'stun:stun.l.google.com:19302' },
+  { urls: 'stun:stun1.l.google.com:19302' },
+  // Example TURN (uncomment + fill in):
+  // { urls: 'turn:global.relay.metered.ca:80',  username: 'YOUR_USER', credential: 'YOUR_PASS' },
+  // { urls: 'turn:global.relay.metered.ca:443', username: 'YOUR_USER', credential: 'YOUR_PASS' },
+];
+
 function initPeer() {
-  state.peer = new Peer(undefined, { debug: 1 });
+  state.peer = new Peer(undefined, {
+    debug: 1,
+    config: { iceServers: ICE_SERVERS },
+  });
 
   state.peer.on('open', (id) => {
     state.myId = id;
@@ -1653,7 +1746,6 @@ function cycleMode(delta) {
 
 async function cycleEffect() {
   state.effect = (state.effect + 1) % EFFECTS.length;
-  els.fxLabel.textContent = EFFECTS[state.effect];
   els.fxTag.textContent = 'FX: ' + EFFECTS[state.effect];
   playClick(420, 0.04, 0.12);
   toast('Effekt: ' + EFFECTS[state.effect]);
@@ -1689,8 +1781,7 @@ function startTransmit() {
   state.outMute.gain.setTargetAtTime(1, state.ctx.currentTime, 0.01);
   setTx(true);
   els.talkIcon.textContent = '🔴';
-  els.talkMain.textContent = 'STOPP';
-  els.talkSub.textContent = 'nochmal tippen';
+  if (els.talkLabel) els.talkLabel.textContent = 'STOPP';
   playSquelchOpen();
   if (navigator.vibrate) navigator.vibrate(30);
 }
@@ -1700,8 +1791,7 @@ function stopTransmit() {
   if (state.outMute) state.outMute.gain.setTargetAtTime(0, state.ctx.currentTime, 0.01);
   setTx(false);
   els.talkIcon.textContent = '🎙';
-  els.talkMain.textContent = 'TIPPEN';
-  els.talkSub.textContent = 'um zu sprechen';
+  if (els.talkLabel) els.talkLabel.textContent = 'SPRECHEN';
   playSquelchClose();
 }
 
@@ -1727,10 +1817,16 @@ function sendSOS() {
 function showMyQr() {
   if (!state.myId) { toast('Noch nicht bereit'); return; }
   els.peerIdText.textContent = state.myId;
-  QRCode.toCanvas(els.qrCanvas, state.myId, { width: 240, margin: 2, color: { dark: '#000', light: '#fff' } }, (err) => {
-    if (err) { console.error(err); toast('QR-Fehler'); return; }
+  try {
+    const qr = qrcode(0, 'M');
+    qr.addData(state.myId);
+    qr.make();
+    els.qrHolder.innerHTML = qr.createSvgTag({ scalable: true, margin: 2 });
     els.qrModal.classList.remove('hidden');
-  });
+  } catch (e) {
+    console.error(e);
+    toast('QR-Fehler: ' + e.message);
+  }
 }
 function closeMyQr() { els.qrModal.classList.add('hidden'); }
 
@@ -1792,9 +1888,20 @@ function powerOff() {
   state.connected = false; state.powered = false;
   setConn('off'); setTalk('off'); setTx(false);
   setTimeout(() => {
+    // Fully tear down the audio graph so the background noise stops
+    try { if (state.staticGain) state.staticGain.disconnect(); } catch(e) {}
+    try { if (state.ctx) state.ctx.close(); } catch(e) {}
+    state.ctx = null;
+    state.staticGain = null;
+    state.rxFilter = null;
+    state.rxHighpass = null;
+    state.rxDistortion = null;
+    state.rxAnalyser = null;
+    state.outMute = null;
+    state.outDest = null;
     els.body.dataset.state = 'off';
     els.startModal.classList.remove('hidden');
-  }, 600);
+  }, 700);
 }
 
 // ============================================================
