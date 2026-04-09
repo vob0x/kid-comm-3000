@@ -1610,12 +1610,18 @@ function setupViz() {
 // mobile networks behind strict NATs / CGNAT), add an entry like:
 //   { urls: 'turn:your.turnserver.com:3478', username: 'u', credential: 'p' }
 // See README.md > "TURN-Server einrichten" for providers.
+// Using the Open Relay Project (https://www.metered.ca/tools/openrelay/)
+// — a free, no-signup TURN server. Shared infrastructure, no SLA, perfect
+// for a kids' walkie-talkie. To swap in your own credentials later, just
+// replace the turn: entries below.
 const ICE_SERVERS = [
   { urls: 'stun:stun.l.google.com:19302' },
   { urls: 'stun:stun1.l.google.com:19302' },
-  // Example TURN (uncomment + fill in):
-  // { urls: 'turn:global.relay.metered.ca:80',  username: 'YOUR_USER', credential: 'YOUR_PASS' },
-  // { urls: 'turn:global.relay.metered.ca:443', username: 'YOUR_USER', credential: 'YOUR_PASS' },
+  { urls: 'stun:stun.relay.metered.ca:80' },
+  { urls: 'turn:global.relay.metered.ca:80',   username: 'openrelayproject', credential: 'openrelayproject' },
+  { urls: 'turn:global.relay.metered.ca:80?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
+  { urls: 'turn:global.relay.metered.ca:443',  username: 'openrelayproject', credential: 'openrelayproject' },
+  { urls: 'turns:global.relay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
 ];
 
 function initPeer() {
