@@ -103,18 +103,18 @@ body[data-mode="astronaut"] {
   --text: #d8e6ff;
   --text-dim: #7a88c0;
 }
-/* ---------- THEME: PIRATEN ---------- */
-body[data-mode="piraten"] {
-  --primary: #d49a2a;
-  --primary-glow: rgba(212, 154, 42, 0.8);
-  --accent: #ff5a00;
-  --accent-glow: rgba(255, 90, 0, 0.6);
-  --bg-deep: #1a0e02;
-  --bg-mid: #2e1a08;
-  --surface: rgba(40, 22, 8, 0.7);
-  --surface-border: rgba(212, 154, 42, 0.5);
-  --text: #ffe6b8;
-  --text-dim: #a08050;
+/* ---------- THEME: PILOT ---------- */
+body[data-mode="pilot"] {
+  --primary: #00b4ff;
+  --primary-glow: rgba(0, 180, 255, 0.8);
+  --accent: #ff8c00;
+  --accent-glow: rgba(255, 140, 0, 0.6);
+  --bg-deep: #040d1a;
+  --bg-mid: #0a1e38;
+  --surface: rgba(8, 28, 54, 0.75);
+  --surface-border: rgba(0, 180, 255, 0.45);
+  --text: #d8eeff;
+  --text-dim: #5a8ab5;
 }
 /* ---------- THEME: GEHEIMAGENT ---------- */
 body[data-mode="geheim"] {
@@ -146,7 +146,7 @@ body[data-mode="polizei"]   .bg-polizei   { display: block; }
 body[data-mode="feuerwehr"] .bg-feuerwehr { display: block; }
 body[data-mode="rettung"]   .bg-rettung   { display: block; }
 body[data-mode="astronaut"] .bg-astronaut { display: block; }
-body[data-mode="piraten"]   .bg-piraten   { display: block; }
+body[data-mode="pilot"]     .bg-pilot     { display: block; }
 body[data-mode="geheim"]    .bg-geheim    { display: block; }
 
 /* ---- POLIZEI bg: alternating strobes ---- */
@@ -312,28 +312,55 @@ body[data-mode="geheim"]    .bg-geheim    { display: block; }
   50% { opacity: 1; transform: scale(1.4); }
 }
 
-/* ---- PIRATEN bg: parchment + slight rocking ---- */
-.bg-piraten::before {
+/* ---- PILOT bg: horizon line + instrument grid + moving clouds ---- */
+.bg-pilot::before {
   content: '';
   position: absolute;
   inset: 0;
   background:
-    radial-gradient(ellipse at center, rgba(80, 40, 10, 0.4) 0%, rgba(20, 8, 2, 0.9) 100%),
-    repeating-linear-gradient(90deg, rgba(0, 0, 0, 0.08) 0, rgba(0, 0, 0, 0.08) 2px, transparent 2px, transparent 10px),
-    repeating-linear-gradient(0deg, rgba(60, 30, 5, 0.15) 0, rgba(60, 30, 5, 0.15) 1px, transparent 1px, transparent 8px);
+    linear-gradient(180deg, rgba(4, 13, 26, 0.2) 0%, rgba(0, 60, 120, 0.15) 48%, rgba(0, 180, 255, 0.08) 50%, rgba(4, 13, 26, 0.3) 52%, rgba(4, 13, 26, 0.95) 100%),
+    repeating-linear-gradient(90deg, rgba(0, 180, 255, 0.04) 0, rgba(0, 180, 255, 0.04) 1px, transparent 1px, transparent 30px),
+    repeating-linear-gradient(0deg, rgba(0, 180, 255, 0.04) 0, rgba(0, 180, 255, 0.04) 1px, transparent 1px, transparent 30px);
 }
-.bg-piraten::after {
-  content: '⚓';
+.pilot-cloud {
   position: absolute;
-  top: 20%;
-  right: 10%;
-  font-size: 140px;
-  opacity: 0.06;
-  animation: rock 5s ease-in-out infinite;
+  width: 200px;
+  height: 60px;
+  border-radius: 50%;
+  background: radial-gradient(ellipse, rgba(180, 220, 255, 0.12) 0%, transparent 70%);
+  animation: cloudDrift 18s linear infinite;
+  pointer-events: none;
 }
-@keyframes rock {
-  0%, 100% { transform: rotate(-5deg); }
-  50% { transform: rotate(5deg); }
+.pilot-cloud:nth-child(2) {
+  top: 25%;
+  width: 260px;
+  height: 70px;
+  animation-duration: 24s;
+  animation-delay: -8s;
+  opacity: 0.7;
+}
+.pilot-cloud:nth-child(3) {
+  top: 55%;
+  width: 160px;
+  height: 45px;
+  animation-duration: 14s;
+  animation-delay: -4s;
+  opacity: 0.5;
+}
+@keyframes cloudDrift {
+  0%   { left: 110%; opacity: 0; }
+  5%   { opacity: 1; }
+  95%  { opacity: 1; }
+  100% { left: -30%; opacity: 0; }
+}
+.pilot-hud-icon {
+  position: absolute;
+  bottom: 18%;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 90px;
+  opacity: 0.07;
+  pointer-events: none;
 }
 
 /* ---- GEHEIMAGENT bg: matrix-grid + radar sweep + classified stamp ---- */
@@ -917,7 +944,12 @@ body[data-state="on"] #startModal { display: none; }
     <div class="starfield"></div>
     <!-- twinkles injected by JS -->
   </div>
-  <div class="bg-layer bg-piraten"></div>
+  <div class="bg-layer bg-pilot">
+    <div class="pilot-cloud" style="top:15%"></div>
+    <div class="pilot-cloud"></div>
+    <div class="pilot-cloud"></div>
+    <div class="pilot-hud-icon">✈️</div>
+  </div>
   <div class="bg-layer bg-geheim">
     <div class="radar-sweep"></div>
     <div class="classified">CLASSIFIED</div>
@@ -985,7 +1017,7 @@ body[data-state="on"] #startModal { display: none; }
   <div class="modal-box">
     <div class="start-logo">📻</div>
     <h2>KID COMM 3000</h2>
-    <p>Funkgerät für echte Geheimagenten, Polizisten, Astronauten & Piraten!</p>
+    <p>Funkgerät für echte Geheimagenten, Polizisten, Astronauten & Piloten!</p>
     <p style="color: #888;">Tippe auf EINSCHALTEN und erlaube das Mikrofon.</p>
     <button id="startBtn">⏻ EINSCHALTEN</button>
   </div>
@@ -1046,9 +1078,9 @@ const MODES = [
     beep: 'spaceSweep',
   },
   {
-    id: 'piraten', name: 'PIRATEN', icon: '🏴‍☠️',
-    audio: { freq: 900, q: 0.7, noise: 0.035, dist: 4.8, highpass: 250 },
-    beep: 'shipBell',
+    id: 'pilot', name: 'PILOT', icon: '✈️',
+    audio: { freq: 1600, q: 1.0, noise: 0.012, dist: 2.0, highpass: 400 },
+    beep: 'cockpitChime',
   },
   {
     id: 'geheim', name: 'GEHEIMAGENT', icon: '🕵️',
@@ -1321,10 +1353,10 @@ const BEEPS = {
     delay.connect(ctx.destination);
     osc.start(t); osc.stop(t + 0.7);
   },
-  shipBell: () => {
-    playTone(520, 0.5, 0.22, 'triangle');
-    playTone(780, 0.5, 0.14, 'triangle', 0.02);
-    setTimeout(() => { playTone(520, 0.5, 0.22, 'triangle'); playTone(780, 0.5, 0.14, 'triangle'); }, 280);
+  cockpitChime: () => {
+    // Classic Boeing-style two-tone "ding-dong" chime
+    playTone(932, 0.35, 0.18, 'sine');   // high Bb
+    playTone(698, 0.45, 0.18, 'sine', 0.38); // lower F
   },
   spyLock: () => {
     // 3 quick blips (computer access) then a descending "lock" beep
@@ -1618,37 +1650,46 @@ function setupViz() {
 //                    PEERJS / WEBRTC
 // ============================================================
 
-// Optional TURN/STUN config. The default STUN servers are free
-// public Google servers. To add TURN (needed for ~10-15% of
-// mobile networks behind strict NATs / CGNAT), add an entry like:
-//   { urls: 'turn:your.turnserver.com:3478', username: 'u', credential: 'p' }
-// See README.md > "TURN-Server einrichten" for providers.
-// Using the Open Relay Project (https://www.metered.ca/tools/openrelay/)
-// — a free, no-signup TURN server. Shared infrastructure, no SLA, perfect
-// for a kids' walkie-talkie. To swap in your own credentials later, just
-// replace the turn: entries below.
-// Mehrere TURN-Provider parallel, damit auch CGNAT (z.B. deutsches
-// Mobilfunk-Netz) durchkommt. Reihenfolge ist wichtig: erst STUN für direktes
-// P2P, dann UDP-TURN, dann TCP/TLS-TURN auf Port 443 als "looks-like-HTTPS"
-// Fallback durch strenge Firewalls.
-const ICE_SERVERS = [
-  // ---- STUN (für direktes P2P, wenn beide Seiten erreichbar sind) ----
+// ---- TURN / STUN ----
+// Metered.ca Free-Tier: 20 GB/Monat, frische Credentials per REST-API.
+// 1) Gratis-Account auf https://www.metered.ca/signup anlegen.
+// 2) Im Dashboard → "TURN Server" → App-Name + API-Key kopieren.
+// 3) Hier eintragen:
+const METERED_APP  = '';   // z.B. 'kidcomm-abcd1234'
+const METERED_KEY  = '';   // z.B. 'a1b2c3d4e5f6g7h8i9j0...'
+
+// Fallback-STUN (immer aktiv, auch ohne Metered-Account).
+const BASE_ICE = [
   { urls: 'stun:stun.l.google.com:19302' },
   { urls: 'stun:stun1.l.google.com:19302' },
   { urls: 'stun:stun2.l.google.com:19302' },
+  { urls: 'stun:stun3.l.google.com:19302' },
+  { urls: 'stun:stun4.l.google.com:19302' },
   { urls: 'stun:stun.cloudflare.com:3478' },
-
-  // ---- Open Relay Project (Metered) — kostenlos, kein Account ----
-  { urls: 'stun:stun.relay.metered.ca:80' },
-  { urls: 'turn:standard.relay.metered.ca:80',                          username: 'openrelayproject', credential: 'openrelayproject' },
-  { urls: 'turn:standard.relay.metered.ca:80?transport=tcp',            username: 'openrelayproject', credential: 'openrelayproject' },
-  { urls: 'turn:standard.relay.metered.ca:443',                         username: 'openrelayproject', credential: 'openrelayproject' },
-  { urls: 'turns:standard.relay.metered.ca:443?transport=tcp',          username: 'openrelayproject', credential: 'openrelayproject' },
-  { urls: 'turn:global.relay.metered.ca:80',                            username: 'openrelayproject', credential: 'openrelayproject' },
-  { urls: 'turn:global.relay.metered.ca:80?transport=tcp',              username: 'openrelayproject', credential: 'openrelayproject' },
-  { urls: 'turn:global.relay.metered.ca:443',                           username: 'openrelayproject', credential: 'openrelayproject' },
-  { urls: 'turns:global.relay.metered.ca:443?transport=tcp',            username: 'openrelayproject', credential: 'openrelayproject' },
 ];
+
+// Holt frische TURN-Credentials von Metered. Gibt iceServers-Array zurück
+// oder leeres Array wenn kein Key konfiguriert / API nicht erreichbar.
+async function fetchTurnServers() {
+  if (!METERED_APP || !METERED_KEY) {
+    console.warn('[TURN] Kein Metered-API-Key → nur STUN (P2P). Für Mobilfunk/CGNAT: metered.ca/signup');
+    return [];
+  }
+  try {
+    const url = 'https://' + METERED_APP + '.metered.live/api/v1/turn/credentials?apiKey=' + METERED_KEY;
+    const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const servers = await res.json();
+    console.log('[TURN] Got', servers.length, 'TURN servers from Metered');
+    return servers;  // already in iceServers format [{urls, username, credential}, ...]
+  } catch (e) {
+    console.error('[TURN] Metered fetch failed:', e);
+    toast('TURN-Server nicht erreichbar – nur WLAN-Betrieb');
+    return [];
+  }
+}
+
+let ICE_SERVERS = [...BASE_ICE]; // will be enriched with TURN on power-on
 
 function initPeer(forceFreshId = false) {
   // Use a stable, persistent ID so the saved partner can find us across sessions.
@@ -2037,6 +2078,19 @@ async function powerOn() {
     const s = await navigator.mediaDevices.getUserMedia({ audio: true });
     s.getTracks().forEach(t => t.stop()); // only for permission prompt
   } catch(e) { toast('Mikrofon nötig!'); }
+
+  // Fetch fresh TURN credentials (non-blocking — if it takes too long
+  // we still start with STUN-only, TURN arrives before first call in most cases)
+  fetchTurnServers().then((turnServers) => {
+    ICE_SERVERS = [...BASE_ICE, ...turnServers];
+    console.log('[ICE] Total servers:', ICE_SERVERS.length,
+      '(STUN:', BASE_ICE.length, '+ TURN:', turnServers.length, ')');
+    if (turnServers.length === 0 && METERED_APP && METERED_KEY) {
+      toast('TURN-Server nicht erreichbar');
+    } else if (turnServers.length > 0) {
+      toast('TURN bereit · Mobilfunk OK');
+    }
+  });
 
   playStartupSequence();
   state.powered = true;

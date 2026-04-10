@@ -2,7 +2,7 @@
  * Cache-first shell so the app works offline after the first visit.
  * WebRTC / signaling traffic of course still needs network. */
 
-const CACHE = 'kidcomm-v3';
+const CACHE = 'kidcomm-v4';
 const SHELL = [
   './',
   './index.html',

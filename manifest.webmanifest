@@ -1,7 +1,7 @@
 {
   "name": "KID COMM 3000",
   "short_name": "KID COMM",
-  "description": "Futuristisches Walkie-Talkie fuer Kinder mit 6 Modi (Polizei, Feuerwehr, Rettung, Astronaut, Piraten, Geheimagent). Verbindung per QR-Code.",
+  "description": "Futuristisches Walkie-Talkie fuer Kinder mit 6 Modi (Polizei, Feuerwehr, Rettung, Astronaut, Pilot, Geheimagent). Verbindung per QR-Code.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
