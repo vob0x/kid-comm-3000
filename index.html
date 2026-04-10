@@ -1061,12 +1061,25 @@ const MODES = [
 const EFFECTS = ['NORMAL', 'ROBOTER', 'TIEF', 'HOCH', 'ALIEN'];
 
 // ---------- State ----------
+// ---------- Persistent storage (own ID + last partner) ----------
+const STORE = {
+  myId:    'kc_my_id_v1',
+  partner: 'kc_partner_id_v1',
+};
+const store = {
+  get(k)    { try { return localStorage.getItem(k); } catch(e) { return null; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch(e) {} },
+  del(k)    { try { localStorage.removeItem(k); } catch(e) {} },
+};
+
 const state = {
   powered: false,
   mode: 0,            // index into MODES
   effect: 0,          // index into EFFECTS
   peer: null,
   myId: null,
+  partnerId: null,    // last successfully-paired peer
+  autoConnectTried: false,
   conn: null,
   call: null,
   rawStream: null,    // raw mic
@@ -1614,27 +1627,56 @@ function setupViz() {
 // — a free, no-signup TURN server. Shared infrastructure, no SLA, perfect
 // for a kids' walkie-talkie. To swap in your own credentials later, just
 // replace the turn: entries below.
+// Mehrere TURN-Provider parallel, damit auch CGNAT (z.B. deutsches
+// Mobilfunk-Netz) durchkommt. Reihenfolge ist wichtig: erst STUN für direktes
+// P2P, dann UDP-TURN, dann TCP/TLS-TURN auf Port 443 als "looks-like-HTTPS"
+// Fallback durch strenge Firewalls.
 const ICE_SERVERS = [
+  // ---- STUN (für direktes P2P, wenn beide Seiten erreichbar sind) ----
   { urls: 'stun:stun.l.google.com:19302' },
   { urls: 'stun:stun1.l.google.com:19302' },
+  { urls: 'stun:stun2.l.google.com:19302' },
+  { urls: 'stun:stun.cloudflare.com:3478' },
+
+  // ---- Open Relay Project (Metered) — kostenlos, kein Account ----
   { urls: 'stun:stun.relay.metered.ca:80' },
-  { urls: 'turn:global.relay.metered.ca:80',   username: 'openrelayproject', credential: 'openrelayproject' },
-  { urls: 'turn:global.relay.metered.ca:80?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
-  { urls: 'turn:global.relay.metered.ca:443',  username: 'openrelayproject', credential: 'openrelayproject' },
-  { urls: 'turns:global.relay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
+  { urls: 'turn:standard.relay.metered.ca:80',                          username: 'openrelayproject', credential: 'openrelayproject' },
+  { urls: 'turn:standard.relay.metered.ca:80?transport=tcp',            username: 'openrelayproject', credential: 'openrelayproject' },
+  { urls: 'turn:standard.relay.metered.ca:443',                         username: 'openrelayproject', credential: 'openrelayproject' },
+  { urls: 'turns:standard.relay.metered.ca:443?transport=tcp',          username: 'openrelayproject', credential: 'openrelayproject' },
+  { urls: 'turn:global.relay.metered.ca:80',                            username: 'openrelayproject', credential: 'openrelayproject' },
+  { urls: 'turn:global.relay.metered.ca:80?transport=tcp',              username: 'openrelayproject', credential: 'openrelayproject' },
+  { urls: 'turn:global.relay.metered.ca:443',                           username: 'openrelayproject', credential: 'openrelayproject' },
+  { urls: 'turns:global.relay.metered.ca:443?transport=tcp',            username: 'openrelayproject', credential: 'openrelayproject' },
 ];
 
-function initPeer() {
-  state.peer = new Peer(undefined, {
+function initPeer(forceFreshId = false) {
+  // Use a stable, persistent ID so the saved partner can find us across sessions.
+  // PeerJS IDs must match /^[A-Za-z0-9_-]+$/, max 50 chars-ish in practice.
+  let savedId = forceFreshId ? null : store.get(STORE.myId);
+  if (savedId && !/^[A-Za-z0-9_-]{1,40}$/.test(savedId)) savedId = null;
+
+  state.partnerId = store.get(STORE.partner);
+  state.autoConnectTried = false;
+
+  state.peer = new Peer(savedId || undefined, {
     debug: 1,
     config: { iceServers: ICE_SERVERS },
   });
 
   state.peer.on('open', (id) => {
     state.myId = id;
+    store.set(STORE.myId, id);
     setConn('ready');
     toast('Funkgerät bereit · SIG OK');
     els.sigTag.textContent = 'SIG: READY';
+
+    // Auto-reconnect to last partner exactly once per power-on
+    if (state.partnerId && state.partnerId !== id && !state.autoConnectTried) {
+      state.autoConnectTried = true;
+      toast('🔄 Verbinde mit letztem Partner…');
+      setTimeout(() => connectToPeer(state.partnerId), 800);
+    }
   });
 
   state.peer.on('call', async (incoming) => {
@@ -1643,20 +1685,57 @@ function initPeer() {
       incoming.answer(stream);
       state.call = incoming;
       bindCall(incoming);
+      // remember whoever just called us
+      if (incoming.peer && incoming.peer !== state.myId) {
+        state.partnerId = incoming.peer;
+        store.set(STORE.partner, incoming.peer);
+      }
     } catch (e) {
       console.error(e); toast('Mikrofon verweigert');
     }
   });
 
-  state.peer.on('connection', (dc) => { state.conn = dc; bindDataConn(dc); });
+  state.peer.on('connection', (dc) => {
+    state.conn = dc; bindDataConn(dc);
+    if (dc.peer && dc.peer !== state.myId) {
+      state.partnerId = dc.peer;
+      store.set(STORE.partner, dc.peer);
+    }
+  });
 
   state.peer.on('error', (err) => {
     console.error('peer err', err);
-    if (err.type === 'peer-unavailable') { toast('Kein Gerät unter diesem Code'); setConn('ready'); }
-    else if (err.type === 'network' || err.type === 'disconnected') { toast('Netzwerkfehler'); }
-    else toast('Fehler: ' + err.type);
+    if (err.type === 'unavailable-id') {
+      // Saved ID is already taken on the broker — drop it and reinit fresh
+      store.del(STORE.myId);
+      try { state.peer.destroy(); } catch(_) {}
+      setTimeout(() => initPeer(true), 400);
+      return;
+    }
+    if (err.type === 'peer-unavailable') {
+      // Auto-reconnect probe failed → silent retry in 8s, manual scan still works
+      if (state.autoConnectTried && !state.connected) {
+        toast('Partner offline – erneuter Versuch in 8 s');
+        setConn('ready');
+        setTimeout(() => {
+          if (state.partnerId && !state.connected && state.peer && !state.peer.disconnected) {
+            connectToPeer(state.partnerId);
+          }
+        }, 8000);
+      } else {
+        toast('Kein Gerät unter diesem Code'); setConn('ready');
+      }
+      return;
+    }
+    if (err.type === 'network' || err.type === 'disconnected') { toast('Netzwerkfehler'); return; }
+    toast('Fehler: ' + err.type);
   });
-  state.peer.on('disconnected', () => { setConn('ready'); });
+  state.peer.on('disconnected', () => {
+    setConn('ready');
+    // PeerJS lost the broker connection — try to bring it back so the
+    // saved partner can still call us.
+    try { state.peer.reconnect(); } catch(_) {}
+  });
 }
 
 function bindCall(call) {
@@ -1679,7 +1758,36 @@ function bindCall(call) {
     playSquelchClose();
     toast('Getrennt');
   });
-  call.on('error', (e) => { console.error(e); toast('Call-Fehler'); });
+  call.on('error', (e) => { console.error(e); toast('Call-Fehler: ' + (e && e.message || e)); });
+
+  // ICE / connection diagnostics — log to console + show user-visible status
+  // when ICE actually fails (the typical CGNAT-without-TURN failure mode).
+  const pc = call.peerConnection;
+  if (pc) {
+    pc.addEventListener('iceconnectionstatechange', () => {
+      console.log('[ICE]', pc.iceConnectionState);
+      if (pc.iceConnectionState === 'failed') {
+        toast('ICE failed – TURN nötig?');
+        setConn('ready');
+        try { call.close(); } catch(_) {}
+      } else if (pc.iceConnectionState === 'disconnected') {
+        els.sigTag.textContent = 'SIG: ░░░░';
+      } else if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed') {
+        els.sigTag.textContent = 'SIG: ████';
+        // Log which candidate pair we ended up using — helps diagnose
+        // direct vs relay over mobile networks.
+        if (pc.getStats) pc.getStats(null).then((stats) => {
+          stats.forEach((r) => {
+            if (r.type === 'candidate-pair' && r.state === 'succeeded' && r.nominated) {
+              const local  = stats.get(r.localCandidateId);
+              const remote = stats.get(r.remoteCandidateId);
+              console.log('[ICE pair]', local && local.candidateType, '->', remote && remote.candidateType);
+            }
+          });
+        }).catch(() => {});
+      }
+    });
+  }
 }
 
 function bindDataConn(dc) {
@@ -1757,6 +1865,10 @@ async function connectToPeer(otherId) {
     if (!call) throw new Error('peer.call() lieferte null');
     state.call = call;
     bindCall(call);
+
+    // remember partner for auto-reconnect on next power-on
+    state.partnerId = otherId;
+    store.set(STORE.partner, otherId);
 
     // 4) Safety-Net: wenn in 10s kein remote-stream ankommt, sauber abbrechen
     setTimeout(() => {
