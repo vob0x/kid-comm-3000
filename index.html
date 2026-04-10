@@ -1704,19 +1704,72 @@ function bindDataConn(dc) {
   dc.on('close', () => { state.conn = null; });
 }
 
+function waitForPeerOpen(timeoutMs = 6000) {
+  if (state.peer && state.myId && !state.peer.disconnected) return Promise.resolve(true);
+  if (!state.peer) return Promise.resolve(false);
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = (ok) => { if (done) return; done = true; resolve(ok); };
+    const onOpen  = () => finish(true);
+    const onError = () => finish(false);
+    state.peer.on('open',  onOpen);
+    state.peer.on('error', onError);
+    setTimeout(() => finish(false), timeoutMs);
+  });
+}
+
 async function connectToPeer(otherId) {
-  if (!otherId || otherId === state.myId) { toast('Ungültiger Code'); return; }
+  if (!otherId) { toast('Ungültiger Code'); return; }
+  if (otherId === state.myId) { toast('Das ist dein eigener Code'); return; }
+
   setConn('connecting');
+  toast('Verbinde…');
+
+  // 1) Peer-Broker muss offen sein
+  if (!state.peer) { toast('Funk nicht bereit – Gerät neu starten'); setConn('ready'); return; }
+  if (!state.myId || state.peer.disconnected) {
+    const ok = await waitForPeerOpen();
+    if (!ok) { toast('Signalserver nicht erreichbar'); setConn('ready'); return; }
+  }
+
+  // 2) Mikrofon holen (kann auf iOS direkt nach Scanner zicken → kurz warten + retry)
+  let stream;
   try {
-    const dc = state.peer.connect(otherId);
+    stream = await rebuildOutgoingStream();
+  } catch (e) {
+    console.error('mic error', e);
+    await new Promise(r => setTimeout(r, 400));
+    try { stream = await rebuildOutgoingStream(); }
+    catch (e2) {
+      console.error('mic retry error', e2);
+      toast('Mikrofon-Fehler: ' + (e2.name || e2.message || 'unbekannt'));
+      setConn('ready');
+      return;
+    }
+  }
+
+  // 3) PeerJS-Call + DataChannel aufbauen
+  try {
+    const dc = state.peer.connect(otherId, { reliable: true });
     state.conn = dc; bindDataConn(dc);
-    const stream = await rebuildOutgoingStream();
+
     const call = state.peer.call(otherId, stream);
+    if (!call) throw new Error('peer.call() lieferte null');
     state.call = call;
     bindCall(call);
+
+    // 4) Safety-Net: wenn in 10s kein remote-stream ankommt, sauber abbrechen
+    setTimeout(() => {
+      if (!state.connected) {
+        toast('Keine Antwort – scannt das andere Gerät?');
+        setConn('ready');
+        try { call.close(); } catch(_) {}
+        try { dc.close(); } catch(_) {}
+      }
+    }, 10000);
   } catch (e) {
-    console.error(e);
-    toast('Verbindung fehlgeschlagen');
+    console.error('connect error', e);
+    toast('Verbindung: ' + (e.message || e.name || 'Fehler'));
     setConn('ready');
   }
 }
@@ -1855,9 +1908,12 @@ async function closeScanner() {
   els.scanModal.classList.add('hidden');
 }
 async function onScanSuccess(txt) {
+  const id = String(txt || '').trim();
   await closeScanner();
+  // give iOS Safari a moment to release the camera before we grab the mic
+  await new Promise(r => setTimeout(r, 250));
   toast('Code gescannt');
-  connectToPeer(String(txt).trim());
+  connectToPeer(id);
 }
 
 // ---------- Power ----------

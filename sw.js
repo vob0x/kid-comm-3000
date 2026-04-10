@@ -2,7 +2,7 @@
  * Cache-first shell so the app works offline after the first visit.
  * WebRTC / signaling traffic of course still needs network. */
 
-const CACHE = 'kidcomm-v1';
+const CACHE = 'kidcomm-v2';
 const SHELL = [
   './',
   './index.html',
@@ -42,9 +42,28 @@ self.addEventListener('fetch', (event) => {
   event.respondWith(
     (async () => {
       const cache = await caches.open(CACHE);
+
+      // Network-first for HTML / navigation so updates land immediately.
+      const isHTML = req.mode === 'navigate'
+        || (req.destination === '' && req.headers.get('accept')?.includes('text/html'))
+        || url.pathname.endsWith('/')
+        || url.pathname.endsWith('.html');
+
+      if (isHTML && url.origin === location.origin) {
+        try {
+          const resp = await fetch(req, { cache: 'no-store' });
+          if (resp && resp.ok) cache.put(req, resp.clone()).catch(() => {});
+          return resp;
+        } catch (err) {
+          const shell = await cache.match('./index.html');
+          if (shell) return shell;
+          throw err;
+        }
+      }
+
+      // Cache-first (with background revalidation) for everything else.
       const cached = await cache.match(req);
       if (cached) {
-        // Revalidate in the background
         fetch(req).then((resp) => {
           if (resp && resp.ok) cache.put(req, resp.clone()).catch(() => {});
         }).catch(() => {});
@@ -57,11 +76,6 @@ self.addEventListener('fetch', (event) => {
         }
         return resp;
       } catch (err) {
-        // Offline fallback: if it's a navigation request, serve the shell
-        if (req.mode === 'navigate') {
-          const shell = await cache.match('./index.html');
-          if (shell) return shell;
-        }
         throw err;
       }
     })()
