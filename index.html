@@ -551,43 +551,50 @@ body[data-conn="off"] .conn-label::after { content: 'OFFLINE'; }
 /* ---- Compass ---- */
 .compass {
   position: relative;
-  width: 90px;
-  height: 90px;
-  margin-top: 10px;
-  opacity: 0;
-  transition: opacity 0.4s;
+  width: 100px;
+  height: 100px;
+  margin-top: 8px;
 }
-.compass.active { opacity: 1; }
 .compass-ring {
   position: absolute;
   inset: 0;
-  border: 1.5px solid var(--surface-border);
+  border: 2px solid var(--surface-border);
   border-radius: 50%;
-  box-shadow: 0 0 12px var(--primary-glow), inset 0 0 8px rgba(0,0,0,0.4);
+  box-shadow: 0 0 14px var(--primary-glow), inset 0 0 10px rgba(0,0,0,0.5);
+  background: radial-gradient(circle, rgba(0,0,0,0.25) 0%, rgba(0,0,0,0.5) 100%);
 }
 .compass-tick {
   position: absolute;
   font-family: 'Orbitron', sans-serif;
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 700;
   color: var(--text-dim);
   text-shadow: 0 0 4px var(--primary-glow);
 }
-.compass-n { top: 3px;  left: 50%; transform: translateX(-50%); color: var(--primary); }
-.compass-e { right: 4px; top: 50%; transform: translateY(-50%); }
-.compass-s { bottom: 3px; left: 50%; transform: translateX(-50%); }
-.compass-w { left: 4px;  top: 50%; transform: translateY(-50%); }
+.compass-n { top: 5px;  left: 50%; transform: translateX(-50%); color: var(--primary); font-size: 12px; }
+.compass-e { right: 6px; top: 50%; transform: translateY(-50%); }
+.compass-s { bottom: 5px; left: 50%; transform: translateX(-50%); }
+.compass-w { left: 6px;  top: 50%; transform: translateY(-50%); }
 .compass-needle {
   position: absolute;
   inset: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: transform 0.15s ease-out;
+  transition: transform 0.2s ease-out;
+  filter: drop-shadow(0 0 6px var(--primary-glow));
+}
+.compass-needle svg {
+  display: block;
+}
+/* When we have a partner, show a small indicator */
+.compass.has-partner .compass-ring {
+  border-color: var(--primary);
+  box-shadow: 0 0 18px var(--primary-glow), inset 0 0 10px rgba(0,0,0,0.5);
 }
 .compass-dist {
   position: absolute;
-  bottom: -16px;
+  bottom: -18px;
   left: 50%;
   transform: translateX(-50%);
   font-family: 'Share Tech Mono', monospace;
@@ -595,7 +602,10 @@ body[data-conn="off"] .conn-label::after { content: 'OFFLINE'; }
   color: var(--primary);
   text-shadow: 0 0 6px var(--primary-glow);
   white-space: nowrap;
+  opacity: 0;
+  transition: opacity 0.3s;
 }
+.compass.has-partner .compass-dist { opacity: 1; }
 .corner-tag {
   position: absolute;
   padding: 4px 10px;
@@ -1040,9 +1050,10 @@ body[data-state="on"] .power-btn {
           <div class="compass-tick compass-w">W</div>
         </div>
         <div class="compass-needle" id="compassNeedle">
-          <svg viewBox="0 0 40 80" width="28" height="56">
-            <polygon points="20,0 28,50 20,42 12,50" fill="var(--primary)" opacity="0.9"/>
-            <polygon points="20,80 12,50 20,58 28,50" fill="var(--text-dim)" opacity="0.5"/>
+          <svg viewBox="0 0 40 80" width="34" height="68" xmlns="http://www.w3.org/2000/svg">
+            <polygon points="20,2 27,48 20,40 13,48" fill="#ff3040" stroke="#ff6060" stroke-width="0.5"/>
+            <polygon points="20,78 13,48 20,56 27,48" fill="#667788" stroke="#8899aa" stroke-width="0.5"/>
+            <circle cx="20" cy="40" r="3.5" fill="#ffffff" stroke="#aabbcc" stroke-width="0.8"/>
           </svg>
         </div>
         <div class="compass-dist" id="compassDist"></div>
@@ -2176,23 +2187,25 @@ function formatDist(m) {
 }
 
 function updateCompass() {
-  if (!state.myPos || !state.partnerPos) {
-    els.compass.classList.remove('active');
-    return;
-  }
-  els.compass.classList.add('active');
-
-  const bearing = bearingTo(state.myPos.lat, state.myPos.lng,
-                            state.partnerPos.lat, state.partnerPos.lng);
-  const dist = distanceTo(state.myPos.lat, state.myPos.lng,
-                          state.partnerPos.lat, state.partnerPos.lng);
-
-  // Needle rotation: bearing minus device heading so the arrow physically
-  // points toward the partner regardless of how the phone is oriented.
   const heading = state.heading != null ? state.heading : 0;
-  const rotation = bearing - heading;
-  els.compassNeedle.style.transform = 'rotate(' + rotation + 'deg)';
-  els.compassDist.textContent = formatDist(dist);
+  const hasPartner = state.myPos && state.partnerPos;
+
+  if (hasPartner) {
+    // Arrow points toward partner
+    els.compass.classList.add('has-partner');
+    const bearing = bearingTo(state.myPos.lat, state.myPos.lng,
+                              state.partnerPos.lat, state.partnerPos.lng);
+    const dist = distanceTo(state.myPos.lat, state.myPos.lng,
+                            state.partnerPos.lat, state.partnerPos.lng);
+    const rotation = bearing - heading;
+    els.compassNeedle.style.transform = 'rotate(' + rotation + 'deg)';
+    els.compassDist.textContent = formatDist(dist);
+  } else {
+    // Regular compass: red tip points north
+    els.compass.classList.remove('has-partner');
+    els.compassNeedle.style.transform = 'rotate(' + (-heading) + 'deg)';
+    els.compassDist.textContent = '';
+  }
 }
 
 function startCompass() {
@@ -2252,7 +2265,9 @@ function stopCompass() {
   state.myPos = null;
   state.partnerPos = null;
   state.heading = null;
-  els.compass.classList.remove('active');
+  els.compass.classList.remove('has-partner');
+  els.compassNeedle.style.transform = 'rotate(0deg)';
+  els.compassDist.textContent = '';
 }
 
 // ---------- Power ----------
