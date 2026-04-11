@@ -547,6 +547,55 @@ body[data-conn="off"] .conn-label::after { content: 'OFFLINE'; }
   text-shadow: 0 0 8px var(--accent-glow);
   margin-top: 4px;
 }
+
+/* ---- Compass ---- */
+.compass {
+  position: relative;
+  width: 90px;
+  height: 90px;
+  margin-top: 10px;
+  opacity: 0;
+  transition: opacity 0.4s;
+}
+.compass.active { opacity: 1; }
+.compass-ring {
+  position: absolute;
+  inset: 0;
+  border: 1.5px solid var(--surface-border);
+  border-radius: 50%;
+  box-shadow: 0 0 12px var(--primary-glow), inset 0 0 8px rgba(0,0,0,0.4);
+}
+.compass-tick {
+  position: absolute;
+  font-family: 'Orbitron', sans-serif;
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--text-dim);
+  text-shadow: 0 0 4px var(--primary-glow);
+}
+.compass-n { top: 3px;  left: 50%; transform: translateX(-50%); color: var(--primary); }
+.compass-e { right: 4px; top: 50%; transform: translateY(-50%); }
+.compass-s { bottom: 3px; left: 50%; transform: translateX(-50%); }
+.compass-w { left: 4px;  top: 50%; transform: translateY(-50%); }
+.compass-needle {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.15s ease-out;
+}
+.compass-dist {
+  position: absolute;
+  bottom: -16px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 11px;
+  color: var(--primary);
+  text-shadow: 0 0 6px var(--primary-glow);
+  white-space: nowrap;
+}
 .corner-tag {
   position: absolute;
   padding: 4px 10px;
@@ -836,26 +885,28 @@ body[data-talk="off"] .talk-btn {
 }
 #reader video { border-radius: 10px; max-width: 100%; }
 
-/* ---- Startup modal ---- */
-#startModal .modal-box {
-  border-color: var(--accent);
-  box-shadow: 0 0 60px var(--accent-glow);
-}
-#startModal h2 {
-  font-size: 26px;
-  color: var(--accent);
-  text-shadow: 0 0 20px var(--accent-glow);
-}
-.start-logo {
-  font-size: 60px;
-  margin: 10px 0;
-  filter: drop-shadow(0 0 20px var(--primary-glow));
-}
+/* ---- Off state: dim background, disable controls ---- */
+body[data-state="off"] .hud { opacity: 0.3; pointer-events: none; }
+body[data-state="off"] .top-bar { opacity: 1; pointer-events: auto; }
+body[data-state="off"] .bg { filter: brightness(0.15); }
 
-/* ---- Off state: hide HUD, show start modal ---- */
-body[data-state="off"] .hud { display: none; }
-body[data-state="off"] .bg { filter: brightness(0.4); }
-body[data-state="on"] #startModal { display: none; }
+/* ---- Power button: red when off, theme color when on ---- */
+body[data-state="off"] .power-btn {
+  color: #ff3b3b;
+  border-color: rgba(255, 59, 59, 0.5);
+  box-shadow: 0 0 12px rgba(255, 59, 59, 0.4);
+  animation: powerPulseOff 2s ease-in-out infinite;
+}
+@keyframes powerPulseOff {
+  0%, 100% { box-shadow: 0 0 8px rgba(255, 59, 59, 0.3); }
+  50%      { box-shadow: 0 0 22px rgba(255, 59, 59, 0.7); }
+}
+body[data-state="on"] .power-btn {
+  color: var(--primary);
+  border-color: var(--surface-border);
+  box-shadow: 0 0 8px var(--primary-glow);
+  animation: none;
+}
 
 /* ---- Toast ---- */
 .toast {
@@ -981,6 +1032,21 @@ body[data-state="on"] #startModal { display: none; }
     <div class="channel-display">
       <div class="ch-big" id="chBig">01</div>
       <div class="ch-small" id="chSmall">KANAL POLIZEI</div>
+      <div class="compass" id="compass">
+        <div class="compass-ring">
+          <div class="compass-tick compass-n">N</div>
+          <div class="compass-tick compass-e">O</div>
+          <div class="compass-tick compass-s">S</div>
+          <div class="compass-tick compass-w">W</div>
+        </div>
+        <div class="compass-needle" id="compassNeedle">
+          <svg viewBox="0 0 40 80" width="28" height="56">
+            <polygon points="20,0 28,50 20,42 12,50" fill="var(--primary)" opacity="0.9"/>
+            <polygon points="20,80 12,50 20,58 28,50" fill="var(--text-dim)" opacity="0.5"/>
+          </svg>
+        </div>
+        <div class="compass-dist" id="compassDist"></div>
+      </div>
     </div>
     <div class="corner-tag ct-tl" id="fxTag">FX: NORMAL</div>
     <div class="corner-tag ct-tr"></div>
@@ -1013,15 +1079,6 @@ body[data-state="on"] #startModal { display: none; }
 
 <!-- ============= Modals ============= -->
 
-<div class="modal" id="startModal">
-  <div class="modal-box">
-    <div class="start-logo">📻</div>
-    <h2>KID COMM 3000</h2>
-    <p>Funkgerät für echte Geheimagenten, Polizisten, Astronauten & Piloten!</p>
-    <p style="color: #888;">Tippe auf EINSCHALTEN und erlaube das Mikrofon.</p>
-    <button id="startBtn">⏻ EINSCHALTEN</button>
-  </div>
-</div>
 
 <div class="modal hidden" id="qrModal">
   <div class="modal-box">
@@ -1129,6 +1186,11 @@ const state = {
   rxFilter: null,
   rxDistortion: null,
   scanner: null,
+  // compass
+  myPos: null,          // { lat, lng }
+  partnerPos: null,     // { lat, lng }
+  heading: null,        // device compass heading (degrees)
+  geoWatchId: null,
 };
 
 // ---------- DOM ----------
@@ -1151,8 +1213,9 @@ const els = {
   fxTag: $('fxTag'),
   sosBtn: $('sosBtn'),
   powerBtn: $('powerBtn'),
-  startBtn: $('startBtn'),
-  startModal: $('startModal'),
+  compass: $('compass'),
+  compassNeedle: $('compassNeedle'),
+  compassDist: $('compassDist'),
   qrModal: $('qrModal'),
   qrHolder: $('qrHolder'),
   peerIdText: $('peerIdText'),
@@ -1236,7 +1299,7 @@ async function initAudio() {
   const hp = ctx.createBiquadFilter();
   hp.type = 'highpass'; hp.frequency.value = 1300;
   state.staticGain = ctx.createGain();
-  state.staticGain.gain.value = MODES[0].audio.noise;
+  state.staticGain.gain.value = 0; // silent by default — noise only while transmitting
   src.connect(hp); hp.connect(state.staticGain); state.staticGain.connect(ctx.destination);
   src.start();
 }
@@ -1253,7 +1316,8 @@ function makeDistortionCurve(amount) {
 
 function applyModeAudio() {
   const m = MODES[state.mode].audio;
-  if (state.staticGain) state.staticGain.gain.value = m.noise;
+  // Only apply noise if currently transmitting; otherwise keep silent
+  if (state.staticGain) state.staticGain.gain.value = state.transmitting ? m.noise : 0;
   if (state.rxFilter) {
     state.rxFilter.frequency.value = m.freq;
     state.rxFilter.Q.value = m.q;
@@ -1789,6 +1853,10 @@ function bindCall(call) {
     els.sigTag.textContent = 'SIG: ████';
     playSquelchOpen();
     toast('Verbunden!');
+    // Immediately share our position so the compass activates on both sides
+    if (state.myPos && state.conn && state.conn.open) {
+      try { state.conn.send({ type: 'pos', lat: state.myPos.lat, lng: state.myPos.lng }); } catch(_) {}
+    }
   });
   call.on('close', () => {
     state.connected = false;
@@ -1847,6 +1915,9 @@ function bindDataConn(dc) {
         playMorseSOS();
         toast('🆘 SOS empfangen');
         if (navigator.vibrate) navigator.vibrate([120, 80, 120, 80, 120]);
+      } else if (obj.type === 'pos' && typeof obj.lat === 'number') {
+        state.partnerPos = { lat: obj.lat, lng: obj.lng };
+        updateCompass();
       }
     } catch(e) { console.error(e); }
   });
@@ -1991,6 +2062,9 @@ function startTransmit() {
   if (!state.outMute) return;
   state.transmitting = true;
   state.outMute.gain.setTargetAtTime(1, state.ctx.currentTime, 0.01);
+  // Fade in static hiss while transmitting
+  const m = MODES[state.mode].audio;
+  if (state.staticGain) state.staticGain.gain.setTargetAtTime(m.noise, state.ctx.currentTime, 0.05);
   setTx(true);
   els.talkIcon.textContent = '🔴';
   if (els.talkLabel) els.talkLabel.textContent = 'STOPP';
@@ -2001,6 +2075,8 @@ function stopTransmit() {
   if (!state.transmitting) return;
   state.transmitting = false;
   if (state.outMute) state.outMute.gain.setTargetAtTime(0, state.ctx.currentTime, 0.01);
+  // Fade out static hiss
+  if (state.staticGain && state.ctx) state.staticGain.gain.setTargetAtTime(0, state.ctx.currentTime, 0.08);
   setTx(false);
   els.talkIcon.textContent = '🎙';
   if (els.talkLabel) els.talkLabel.textContent = 'SPRECHEN';
@@ -2069,9 +2145,118 @@ async function onScanSuccess(txt) {
   connectToPeer(id);
 }
 
+// ============================================================
+//                    COMPASS (direction to partner)
+// ============================================================
+
+// Haversine bearing: angle from A to B in degrees (0=N, 90=E)
+function bearingTo(lat1, lng1, lat2, lng2) {
+  const toRad = Math.PI / 180;
+  const dLng = (lng2 - lng1) * toRad;
+  const y = Math.sin(dLng) * Math.cos(lat2 * toRad);
+  const x = Math.cos(lat1 * toRad) * Math.sin(lat2 * toRad)
+          - Math.sin(lat1 * toRad) * Math.cos(lat2 * toRad) * Math.cos(dLng);
+  return ((Math.atan2(y, x) * 180 / Math.PI) + 360) % 360;
+}
+
+// Haversine distance in metres
+function distanceTo(lat1, lng1, lat2, lng2) {
+  const R = 6371000;
+  const toRad = Math.PI / 180;
+  const dLat = (lat2 - lat1) * toRad;
+  const dLng = (lng2 - lng1) * toRad;
+  const a = Math.sin(dLat / 2) ** 2
+          + Math.cos(lat1 * toRad) * Math.cos(lat2 * toRad) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function formatDist(m) {
+  if (m < 1000) return Math.round(m) + ' m';
+  return (m / 1000).toFixed(1) + ' km';
+}
+
+function updateCompass() {
+  if (!state.myPos || !state.partnerPos) {
+    els.compass.classList.remove('active');
+    return;
+  }
+  els.compass.classList.add('active');
+
+  const bearing = bearingTo(state.myPos.lat, state.myPos.lng,
+                            state.partnerPos.lat, state.partnerPos.lng);
+  const dist = distanceTo(state.myPos.lat, state.myPos.lng,
+                          state.partnerPos.lat, state.partnerPos.lng);
+
+  // Needle rotation: bearing minus device heading so the arrow physically
+  // points toward the partner regardless of how the phone is oriented.
+  const heading = state.heading != null ? state.heading : 0;
+  const rotation = bearing - heading;
+  els.compassNeedle.style.transform = 'rotate(' + rotation + 'deg)';
+  els.compassDist.textContent = formatDist(dist);
+}
+
+function startCompass() {
+  // GPS
+  if ('geolocation' in navigator) {
+    state.geoWatchId = navigator.geolocation.watchPosition(
+      (pos) => {
+        state.myPos = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+        // Send position to partner
+        if (state.conn && state.conn.open) {
+          try { state.conn.send({ type: 'pos', lat: state.myPos.lat, lng: state.myPos.lng }); } catch(_) {}
+        }
+        updateCompass();
+      },
+      (err) => console.warn('[GPS]', err.message),
+      { enableHighAccuracy: true, maximumAge: 3000, timeout: 8000 }
+    );
+  }
+
+  // Device orientation (compass heading)
+  const onOrientation = (e) => {
+    // iOS: webkitCompassHeading is degrees from north (clockwise)
+    // Android: e.alpha is degrees from north (counterclockwise for absolute)
+    if (e.webkitCompassHeading != null) {
+      state.heading = e.webkitCompassHeading;
+    } else if (e.alpha != null) {
+      // e.absolute = true means alpha is relative to north
+      state.heading = e.absolute ? (360 - e.alpha) : null;
+    }
+    updateCompass();
+  };
+
+  // iOS 13+ requires permission
+  if (typeof DeviceOrientationEvent !== 'undefined' &&
+      typeof DeviceOrientationEvent.requestPermission === 'function') {
+    DeviceOrientationEvent.requestPermission()
+      .then((resp) => {
+        if (resp === 'granted') window.addEventListener('deviceorientationabsolute', onOrientation, true);
+        // Fallback to non-absolute
+        window.addEventListener('deviceorientation', onOrientation, true);
+      })
+      .catch(() => {
+        window.addEventListener('deviceorientation', onOrientation, true);
+      });
+  } else {
+    // Try absolute first (Android), fallback to regular
+    window.addEventListener('deviceorientationabsolute', onOrientation, true);
+    window.addEventListener('deviceorientation', onOrientation, true);
+  }
+}
+
+function stopCompass() {
+  if (state.geoWatchId != null) {
+    navigator.geolocation.clearWatch(state.geoWatchId);
+    state.geoWatchId = null;
+  }
+  state.myPos = null;
+  state.partnerPos = null;
+  state.heading = null;
+  els.compass.classList.remove('active');
+}
+
 // ---------- Power ----------
 async function powerOn() {
-  els.startModal.classList.add('hidden');
   els.body.dataset.state = 'on';
   try { await initAudio(); } catch(e) { console.error(e); toast('Audio-Fehler'); return; }
   try {
@@ -2097,6 +2282,7 @@ async function powerOn() {
   applyMode(false);
   initPeer();
   setupViz();
+  startCompass();
   setInterval(updateClock, 1000);
   updateClock();
 }
@@ -2115,6 +2301,7 @@ function powerOff() {
   state.rawStream = null; state.remoteStream = null; state.remoteAudioEl = null;
   state.connected = false; state.powered = false;
   setConn('off'); setTalk('off'); setTx(false);
+  stopCompass();
   setTimeout(() => {
     // Fully tear down the audio graph so the background noise stops
     try { if (state.staticGain) state.staticGain.disconnect(); } catch(e) {}
@@ -2128,7 +2315,6 @@ function powerOff() {
     state.outMute = null;
     state.outDest = null;
     els.body.dataset.state = 'off';
-    els.startModal.classList.remove('hidden');
   }, 700);
 }
 
@@ -2136,8 +2322,11 @@ function powerOff() {
 //                        WIRE-UP
 // ============================================================
 
-els.startBtn.addEventListener('click', powerOn);
-els.powerBtn.addEventListener('click', powerOff);
+// Power button is a toggle — no start screen
+els.powerBtn.addEventListener('click', () => {
+  if (state.powered) powerOff();
+  else powerOn();
+});
 els.talkBtn.addEventListener('click', onTalkTap);
 // Also support spacebar (dev/testing)
 window.addEventListener('keydown', (e) => {
