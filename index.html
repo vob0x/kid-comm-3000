@@ -2319,7 +2319,9 @@ function updateCompass() {
 function startCompass() {
   // GPS
   if ('geolocation' in navigator) {
+    let gotFix = false;
     const geoSuccess = (pos) => {
+      gotFix = true;
       state.myPos = { lat: pos.coords.latitude, lng: pos.coords.longitude };
       // Send position to partner
       if (state.conn && state.conn.open) {
@@ -2331,23 +2333,29 @@ function startCompass() {
       }
       updateCompass();
     };
-    // Try high accuracy first (GPS satellites), fall back to low accuracy (WiFi/cell tower)
+    // Strategy: run BOTH high-accuracy (GPS satellite) and low-accuracy (WiFi/cell tower)
+    // in parallel. First one that delivers a fix wins. Low-accuracy works indoors.
     state.geoWatchId = navigator.geolocation.watchPosition(
       geoSuccess,
-      (err) => {
-        console.warn('[GPS] High accuracy failed:', err.message);
-        // Fall back to low accuracy (WiFi/cell tower position — works indoors)
-        if (state.geoWatchId != null) {
-          navigator.geolocation.clearWatch(state.geoWatchId);
-        }
-        state.geoWatchId = navigator.geolocation.watchPosition(
-          geoSuccess,
-          (err2) => { console.warn('[GPS] Low accuracy also failed:', err2.message); toast('⚠️ GPS nicht verfügbar'); },
-          { enableHighAccuracy: false, maximumAge: 30000, timeout: 15000 }
-        );
-      },
-      { enableHighAccuracy: true, maximumAge: 5000, timeout: 12000 }
+      (err) => { console.warn('[GPS] High accuracy error:', err.message); },
+      { enableHighAccuracy: true, maximumAge: 10000, timeout: 15000 }
     );
+    // Low-accuracy parallel watcher (WiFi/cell tower — fast indoors)
+    state._geoWatchLow = navigator.geolocation.watchPosition(
+      geoSuccess,
+      (err) => { console.warn('[GPS] Low accuracy error:', err.message); },
+      { enableHighAccuracy: false, maximumAge: 60000, timeout: 10000 }
+    );
+    // Also try a one-shot getCurrentPosition for an immediate fix
+    navigator.geolocation.getCurrentPosition(
+      geoSuccess,
+      () => {},
+      { enableHighAccuracy: false, maximumAge: 120000, timeout: 8000 }
+    );
+    // Warn if still no fix after 20s
+    setTimeout(() => {
+      if (!gotFix) toast('⚠️ Warte auf GPS-Position...');
+    }, 20000);
     // Periodic position ping every 5s — ensures partner gets our position even if
     // connection was established after first GPS fix
     state._posInterval = setInterval(() => {
@@ -2476,6 +2484,10 @@ function stopCompass() {
   if (state.geoWatchId != null) {
     navigator.geolocation.clearWatch(state.geoWatchId);
     state.geoWatchId = null;
+  }
+  if (state._geoWatchLow != null) {
+    navigator.geolocation.clearWatch(state._geoWatchLow);
+    state._geoWatchLow = null;
   }
   if (state._posInterval) {
     clearInterval(state._posInterval);
