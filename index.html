@@ -530,17 +530,18 @@ body[data-conn="off"] .conn-label::after { content: 'OFFLINE'; }
   justify-content: center;
   pointer-events: none;
   z-index: 2;
-  gap: 2px;
+  gap: 0;
 }
-/* Channel number — compact badge top-center */
+/* Channel number — big, tight above compass */
 .ch-big {
   font-family: 'Orbitron', monospace;
-  font-size: clamp(36px, 10vw, 52px);
+  font-size: clamp(48px, 14vw, 80px);
   font-weight: 900;
   color: var(--primary);
-  text-shadow: 0 0 16px var(--primary-glow), 0 0 30px var(--primary-glow);
-  letter-spacing: 3px;
+  text-shadow: 0 0 20px var(--primary-glow), 0 0 40px var(--primary-glow), 0 0 4px #fff;
+  letter-spacing: 4px;
   line-height: 1;
+  margin-bottom: -4px;
 }
 .ch-small {
   font-family: 'Share Tech Mono', monospace;
@@ -631,8 +632,8 @@ body[data-conn="off"] .conn-label::after { content: 'OFFLINE'; }
 /* FX indicator — small badge bottom-right of compass area */
 .fx-indicator {
   position: absolute;
-  bottom: 10px;
-  right: 12px;
+  top: 10px;
+  left: 12px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1007,7 +1008,7 @@ body[data-state="on"] .power-btn {
   .talk-icon { font-size: 36px; }
   .talk-label { font-size: 18px; }
   .display-area { min-height: 90px; }
-  .ch-big { font-size: clamp(28px, 8vw, 40px); }
+  .ch-big { font-size: clamp(40px, 12vw, 60px); }
   .compass { width: clamp(90px, 26vw, 120px); height: clamp(90px, 26vw, 120px); }
 }
 @media (max-height: 600px) {
@@ -1019,7 +1020,7 @@ body[data-state="on"] .power-btn {
   .talk-label { font-size: 16px; }
   .bottom-row .mini-btn { padding: 8px 2px; font-size: 24px; }
   .compass { width: 80px; height: 80px; }
-  .ch-big { font-size: 28px; }
+  .ch-big { font-size: 36px; }
 }
 </style>
 </head>
