@@ -2319,13 +2319,39 @@ function updateCompass() {
 function startCompass() {
   // GPS
   if ('geolocation' in navigator) {
-    // Immediate diagnostic test
-    toast('🔍 GPS-Test läuft...');
+    // Persistent debug overlay — won't be overwritten by toasts
+    const dbg = document.createElement('div');
+    dbg.id = 'gpsDebug';
+    dbg.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99999;background:rgba(0,0,0,0.9);color:#0f0;font:12px monospace;padding:8px;max-height:40vh;overflow:auto;';
+    dbg.textContent = '🔍 GPS-Diagnose gestartet...\n';
+    document.body.appendChild(dbg);
+    function dbgLog(msg) { dbg.textContent += msg + '\n'; dbg.scrollTop = dbg.scrollHeight; }
+
+    // 1) Check Permissions API
+    if (navigator.permissions) {
+      navigator.permissions.query({ name: 'geolocation' }).then(r => {
+        dbgLog('Permissions API: ' + r.state);
+      }).catch(e => dbgLog('Permissions API Fehler: ' + e.message));
+    } else {
+      dbgLog('Permissions API: nicht verfügbar');
+    }
+
+    // 2) Test getCurrentPosition with maximum leniency
+    dbgLog('getCurrentPosition(lowAcc, maxAge=∞, timeout=10s)...');
     navigator.geolocation.getCurrentPosition(
-      (p) => { toast('✅ GPS OK: ' + p.coords.latitude.toFixed(4) + ',' + p.coords.longitude.toFixed(4) + ' ±' + Math.round(p.coords.accuracy) + 'm'); },
-      (e) => { toast('❌ GPS-Test fehlgeschlagen: Code=' + e.code + ' ' + e.message); },
-      { enableHighAccuracy: false, maximumAge: Infinity, timeout: 20000 }
+      (p) => { dbgLog('✅ getCurrentPosition OK: ' + p.coords.latitude.toFixed(5) + ',' + p.coords.longitude.toFixed(5) + ' ±' + Math.round(p.coords.accuracy) + 'm'); },
+      (e) => { dbgLog('❌ getCurrentPosition FEHLER: Code=' + e.code + ' (' + ['','PERMISSION_DENIED','POSITION_UNAVAILABLE','TIMEOUT'][e.code] + ') ' + e.message); },
+      { enableHighAccuracy: false, maximumAge: Infinity, timeout: 10000 }
     );
+
+    // 3) Test with high accuracy
+    dbgLog('getCurrentPosition(highAcc, timeout=10s)...');
+    navigator.geolocation.getCurrentPosition(
+      (p) => { dbgLog('✅ highAcc OK: ' + p.coords.latitude.toFixed(5) + ',' + p.coords.longitude.toFixed(5) + ' ±' + Math.round(p.coords.accuracy) + 'm'); },
+      (e) => { dbgLog('❌ highAcc FEHLER: Code=' + e.code + ' (' + ['','PERMISSION_DENIED','POSITION_UNAVAILABLE','TIMEOUT'][e.code] + ') ' + e.message); },
+      { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 }
+    );
+
     let gotFix = false;
     const geoSuccess = (pos) => {
       gotFix = true;
