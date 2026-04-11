@@ -2305,6 +2305,10 @@ function startCompass() {
         if (state.conn && state.conn.open) {
           try { state.conn.send({ type: 'pos', lat: state.myPos.lat, lng: state.myPos.lng }); } catch(_) {}
         }
+        // GPS heading fallback: coords.heading gives direction of travel (when moving > ~3 km/h)
+        if (pos.coords.heading != null && !isNaN(pos.coords.heading) && pos.coords.speed > 0.8) {
+          setHeading(pos.coords.heading, 'gps');
+        }
         updateCompass();
       },
       (err) => console.warn('[GPS]', err.message),
@@ -2322,7 +2326,7 @@ function startCompass() {
 
   function setHeading(deg, source) {
     // Higher-priority source wins; don't downgrade once a good source is active
-    const priority = { sensor: 3, absolute: 2, event: 1, none: 0 };
+    const priority = { sensor: 4, absolute: 3, gps: 2, event: 1, none: 0 };
     if (priority[source] < priority[headingSource]) return;
     headingSource = source;
     state.heading = ((deg % 360) + 360) % 360;
@@ -2368,7 +2372,7 @@ function startCompass() {
       if (e.webkitCompassHeading != null) {
         // iOS: webkitCompassHeading is degrees CW from north
         setHeading(e.webkitCompassHeading, 'absolute');
-      } else if (e.alpha != null && headingSource !== 'sensor' && headingSource !== 'absolute') {
+      } else if (e.alpha != null && (headingSource === 'none' || headingSource === 'event')) {
         // Non-absolute alpha as last resort
         setHeading((360 - e.alpha) % 360, 'event');
       }
@@ -2416,8 +2420,11 @@ function startCompass() {
   // Timeout: if nothing works after 4 s, warn
   setTimeout(() => {
     if (headingSource === 'none') {
-      console.warn('[Compass] No heading source after 4 s');
-      toast('Kompass: Sensor nicht verfügbar');
+      console.warn('[Compass] No heading source after 4 s — GPS heading fallback active when moving');
+      toast('Kompass: Sensor blockiert · Beim Laufen aktiv (GPS)');
+    } else if (headingSource === 'gps') {
+      console.log('[Compass] Using GPS heading (direction of travel)');
+      toast('Kompass: GPS-Modus · Beim Laufen aktiv');
     } else {
       console.log('[Compass] Active source:', headingSource);
     }
