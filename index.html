@@ -612,19 +612,21 @@ body[data-conn="off"] .conn-label::after { content: 'OFFLINE'; }
   background: var(--primary);
   box-shadow: 0 0 8px var(--primary-glow);
   z-index: 5;
-  transition: width 0.4s, height 0.4s, margin 0.4s, background 0.4s, box-shadow 0.4s;
+  transition: background 0.4s, box-shadow 0.4s, transform 0.4s;
+  will-change: transform;
 }
 /* Radar ping — concentric ring expanding from center */
 .compass-ping {
   position: absolute;
   top: 50%; left: 50%;
-  width: 0; height: 0;
-  margin: 0;
+  width: 100px; height: 100px;
+  margin: -50px 0 0 -50px;
   border-radius: 50%;
   border: 2px solid var(--primary);
   opacity: 0;
   pointer-events: none;
   z-index: 4;
+  will-change: transform, opacity;
 }
 
 /* --- Proximity levels (hot/cold treasure hunt) --- */
@@ -661,9 +663,9 @@ body[data-conn="off"] .conn-label::after { content: 'OFFLINE'; }
   animation: compassPulseClose 2.5s ease-in-out infinite !important;
 }
 .compass.prox-close .compass-hub {
-  width: 14px; height: 14px; margin: -7px 0 0 -7px;
   background: #ff8800;
   box-shadow: 0 0 16px rgba(255, 136, 0, 0.9);
+  transform: scale(1.4);
 }
 .compass.prox-close .compass-dist { color: #ff8800; text-shadow: 0 0 10px rgba(255, 136, 0, 0.7); }
 .compass.prox-close .compass-ping {
@@ -681,7 +683,6 @@ body[data-conn="off"] .conn-label::after { content: 'OFFLINE'; }
   animation: compassPulseHot 1.5s ease-in-out infinite !important;
 }
 .compass.prox-hot .compass-hub {
-  width: 18px; height: 18px; margin: -9px 0 0 -9px;
   background: #00ff66;
   box-shadow: 0 0 22px rgba(0, 255, 102, 1);
   animation: hubGlow 1.5s ease-in-out infinite;
@@ -697,13 +698,13 @@ body[data-conn="off"] .conn-label::after { content: 'OFFLINE'; }
   50%      { box-shadow: 0 0 50px rgba(0, 255, 102, 1), 0 0 20px rgba(0, 255, 102, 0.6), inset 0 0 20px rgba(0,0,0,0.2); }
 }
 @keyframes hubGlow {
-  0%, 100% { transform: scale(1); }
-  50%      { transform: scale(1.3); }
+  0%, 100% { transform: scale(1.8); }
+  50%      { transform: scale(2.3); }
 }
 /* Radar ping ring animation */
 @keyframes radarPing {
-  0%   { width: 10px; height: 10px; margin: -5px 0 0 -5px; opacity: 0.8; }
-  100% { width: 100px; height: 100px; margin: -50px 0 0 -50px; opacity: 0; }
+  0%   { transform: scale(0.1); opacity: 0.8; }
+  100% { transform: scale(1); opacity: 0; }
 }
 
 /* Distance readout — below compass */
@@ -930,9 +931,38 @@ body[data-talk="off"] .talk-btn {
 }
 .mini-btn:active { transform: scale(0.94); background: rgba(255, 255, 255, 0.1); }
 #sosBtn {
-  color: var(--danger);
-  border-color: var(--danger);
-  box-shadow: 0 0 14px rgba(255, 42, 58, 0.4), inset 0 1px 1px rgba(255, 255, 255, 0.1);
+  color: #ff2a3a;
+  border-color: #ff2a3a;
+  box-shadow: 0 0 14px rgba(255, 42, 58, 0.4), inset 0 1px 1px rgba(255,255,255,0.1);
+  animation: sosPulse 2s ease-in-out infinite;
+  font-size: 22px;
+  min-width: 48px;
+}
+@keyframes sosPulse {
+  0%, 100% { box-shadow: 0 0 14px rgba(255, 42, 58, 0.4), inset 0 1px 1px rgba(255,255,255,0.1); }
+  50%      { box-shadow: 0 0 28px rgba(255, 42, 58, 0.8), 0 0 8px rgba(255, 42, 58, 0.3), inset 0 1px 1px rgba(255,255,255,0.1); }
+}
+
+.sos-flash {
+  position: fixed;
+  inset: 0;
+  z-index: 150;
+  background: radial-gradient(circle, rgba(255,0,0,0.6), rgba(255,0,0,0.3));
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.sos-flash.active {
+  opacity: 1;
+  animation: sosFlashAnim 1.5s ease-out forwards;
+}
+@keyframes sosFlashAnim {
+  0%   { opacity: 1; }
+  15%  { opacity: 0.2; }
+  30%  { opacity: 0.9; }
+  45%  { opacity: 0.1; }
+  60%  { opacity: 0.7; }
+  100% { opacity: 0; }
 }
 
 /* ============================================================
@@ -1054,10 +1084,10 @@ body[data-state="on"] .power-btn {
 
 /* ---- Toast ---- */
 .toast {
-  position: fixed;
-  bottom: 20px;
-  left: 50%;
-  transform: translateX(-50%);
+  position: relative;
+  bottom: auto;
+  left: auto;
+  transform: none;
   background: rgba(0, 0, 0, 0.95);
   color: var(--primary);
   padding: 10px 22px;
@@ -1071,8 +1101,20 @@ body[data-state="on"] .power-btn {
   pointer-events: none;
   transition: opacity 250ms;
   text-shadow: 0 0 6px var(--primary-glow);
+  text-align: center;
+  align-self: center;
+  max-width: 90%;
+  height: 0;
+  padding: 0;
+  margin: 0;
+  overflow: hidden;
 }
-.toast.show { opacity: 1; }
+.toast.show {
+  opacity: 1;
+  height: auto;
+  padding: 10px 22px;
+  margin: 0 12px;
+}
 
 /* ---- Desktop too-big warning ---- */
 .desk-warn {
@@ -1180,6 +1222,7 @@ body[data-state="on"] .power-btn {
     <div class="channel-display">
       <div class="ch-big" id="chBig">01</div>
       <div class="ch-small" id="chSmall">KANAL POLIZEI</div>
+      <div class="toast" id="toast"></div>
       <div class="compass" id="compass">
         <!-- Outer decoration ring (static) -->
         <div class="compass-bezel"></div>
@@ -1217,8 +1260,8 @@ body[data-state="on"] .power-btn {
           <svg viewBox="0 0 120 120" class="compass-partner-svg" xmlns="http://www.w3.org/2000/svg">
             <defs>
               <linearGradient id="partnerArrow" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stop-color="var(--primary)"/>
-                <stop offset="100%" stop-color="var(--accent)"/>
+                <stop offset="0%" stop-color="#00e5ff" id="partnerStopA"/>
+                <stop offset="100%" stop-color="#7c4dff" id="partnerStopB"/>
               </linearGradient>
             </defs>
             <!-- Arrow pointing up (0°=north, rotated via JS) -->
@@ -1287,8 +1330,6 @@ body[data-state="on"] .power-btn {
     <button id="closeScanBtn" class="secondary">ABBRECHEN</button>
   </div>
 </div>
-
-<div class="toast" id="toast"></div>
 
 <!-- External libs -->
 <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
@@ -1386,6 +1427,13 @@ const state = {
   partnerPos: null,     // { lat, lng }
   heading: null,        // device compass heading (degrees)
   geoWatchId: null,
+  _geoWatchLow: null,
+  _posInterval: null,
+  _compassSensor: null,
+  _compassListeners: null, // { onAbsolute, onEvent } for cleanup
+  _clockInterval: null,
+  _vizRafId: null,
+  _rxNodes: null,
 };
 
 // ---------- DOM ----------
@@ -1434,6 +1482,15 @@ function toast(msg, ms = 2000) {
   els.toast.classList.add('show');
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => els.toast.classList.remove('show'), ms);
+}
+
+function triggerSOSFlash() {
+  const fl = document.getElementById('sosFlash');
+  if (!fl) return;
+  fl.classList.remove('active');
+  void fl.offsetWidth; // force reflow
+  fl.classList.add('active');
+  setTimeout(() => fl.classList.remove('active'), 1600);
 }
 
 // ---------- Background scene extras ----------
@@ -1790,6 +1847,12 @@ async function rebuildOutgoingStream() {
 
 function processRemoteStream(stream) {
   const ctx = state.ctx;
+
+  // Disconnect previous remote audio chain
+  if (state._rxNodes) {
+    state._rxNodes.forEach(n => { try { n.disconnect(); } catch(e) {} });
+  }
+
   // Attach to a muted <audio> so MediaStreamSource actually produces audio
   if (state.remoteAudioEl) {
     try { state.remoteAudioEl.pause(); } catch(e) {}
@@ -1834,6 +1897,8 @@ function processRemoteStream(stream) {
   dist.connect(analyser);
   analyser.connect(g);
   g.connect(ctx.destination);
+
+  state._rxNodes = [source, hs, bp, dist, analyser, g];
 }
 
 // ============================================================
@@ -1853,7 +1918,7 @@ function setupViz() {
   const ctx2d = cv.getContext('2d');
 
   function draw() {
-    requestAnimationFrame(draw);
+    state._vizRafId = requestAnimationFrame(draw);
     const w = cv.width, h = cv.height;
     ctx2d.clearRect(0, 0, w, h);
 
@@ -2160,6 +2225,7 @@ function bindDataConn(dc) {
         applyMode(false);
       } else if (obj.type === 'sos') {
         playMorseSOS();
+        triggerSOSFlash();
         toast('🆘 SOS empfangen');
         if (navigator.vibrate) navigator.vibrate([120, 80, 120, 80, 120]);
       } else if (obj.type === 'pos' && typeof obj.lat === 'number') {
@@ -2264,6 +2330,20 @@ function applyMode(broadcast = true) {
   playClick(300, 0.03, 0.1);
   setTimeout(() => playStaticBurst(0.08, 0.12), 30);
   if (navigator.vibrate) navigator.vibrate(10);
+
+  // Update SVG gradient stops (CSS vars don't work in SVG attributes in Firefox)
+  const cs = getComputedStyle(document.body);
+  const stopA = document.getElementById('partnerStopA');
+  const stopB = document.getElementById('partnerStopB');
+  if (stopA) stopA.setAttribute('stop-color', cs.getPropertyValue('--primary').trim() || '#00e5ff');
+  if (stopB) stopB.setAttribute('stop-color', cs.getPropertyValue('--accent').trim() || '#7c4dff');
+
+  // Update partner arrow stroke
+  const partnerPoly = document.querySelector('.compass-partner-svg polygon');
+  const partnerLine = document.querySelector('.compass-partner-svg line');
+  if (partnerPoly) partnerPoly.setAttribute('stroke', cs.getPropertyValue('--primary').trim() || '#00e5ff');
+  if (partnerLine) partnerLine.setAttribute('stroke', cs.getPropertyValue('--primary').trim() || '#00e5ff');
+
   if (broadcast && state.conn && state.conn.open) {
     state.conn.send({ type: 'mode', mode: state.mode });
   }
@@ -2283,7 +2363,7 @@ async function cycleEffect() {
   if (navigator.vibrate) navigator.vibrate(8);
 
   // Rebuild outgoing stream so the new effect applies
-  if (state.connected && state.call) {
+  if (state.connected && state.call && state.call.peerConnection) {
     try {
       const newStream = await rebuildOutgoingStream();
       const sender = state.call.peerConnection
@@ -2345,6 +2425,7 @@ function sendRing() {
 function sendSOS() {
   if (state.conn && state.conn.open) state.conn.send({ type: 'sos' });
   playMorseSOS();
+  triggerSOSFlash();
   toast('🆘 SOS gesendet');
   if (navigator.vibrate) navigator.vibrate([100, 60, 100, 60, 100]);
 }
@@ -2595,6 +2676,8 @@ function startCompass() {
     };
     window.addEventListener('deviceorientationabsolute', onAbsolute, true);
     window.addEventListener('deviceorientation', onEvent, true);
+    // Store refs for cleanup in stopCompass()
+    state._compassListeners = { onAbsolute, onEvent };
   }
 
   // ---- Kick it off ----
@@ -2664,6 +2747,12 @@ function stopCompass() {
     try { state._compassSensor.stop(); } catch(_) {}
     state._compassSensor = null;
   }
+  // Remove orientation event listeners
+  if (state._compassListeners) {
+    window.removeEventListener('deviceorientationabsolute', state._compassListeners.onAbsolute, true);
+    window.removeEventListener('deviceorientation', state._compassListeners.onEvent, true);
+    state._compassListeners = null;
+  }
   state.myPos = null;
   state.partnerPos = null;
   state.heading = null;
@@ -2702,7 +2791,7 @@ async function powerOn() {
   initPeer();
   setupViz();
   startCompass();
-  setInterval(updateClock, 1000);
+  state._clockInterval = setInterval(updateClock, 1000);
   updateClock();
 
   // Network recovery — auto-reconnect when WiFi comes back (e.g. devolo switch)
@@ -2727,6 +2816,11 @@ function powerOff() {
   if (!state.powered) return;
   window.removeEventListener('online', onNetworkBack);
   clearTimeout(_reconnectTimer);
+  // Stop clock + visualizer
+  if (state._clockInterval) { clearInterval(state._clockInterval); state._clockInterval = null; }
+  if (state._vizRafId) { cancelAnimationFrame(state._vizRafId); state._vizRafId = null; }
+  // Reset compass rotation tracking
+  _dialRot = 0; _partnerRot = 0;
   playShutdownSequence();
   stopTransmit();
   try { if (state.call) state.call.close(); } catch(e) {}
@@ -2738,6 +2832,7 @@ function powerOff() {
   state.peer = null; state.call = null; state.conn = null;
   state.rawStream = null; state.remoteStream = null; state.remoteAudioEl = null;
   state.connected = false; state.powered = false;
+  state.autoConnectTried = false; // reset for next power-on
   setConn('off'); setTalk('off'); setTx(false);
   stopCompass();
   setTimeout(() => {
@@ -2798,5 +2893,8 @@ if ('serviceWorker' in navigator && location.protocol === 'https:') {
   navigator.serviceWorker.register('sw.js').catch(() => {});
 }
 </script>
+
+<div class="sos-flash" id="sosFlash"></div>
+
 </body>
 </html>
