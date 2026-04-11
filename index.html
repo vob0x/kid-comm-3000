@@ -551,17 +551,59 @@ body[data-conn="off"] .conn-label::after { content: 'OFFLINE'; }
 /* ---- Compass ---- */
 .compass {
   position: relative;
-  width: 100px;
-  height: 100px;
-  margin-top: 8px;
+  width: 110px;
+  height: 110px;
+  margin-top: 6px;
 }
+/* Outer ring: double border + rotating glow */
 .compass-ring {
   position: absolute;
   inset: 0;
-  border: 2px solid var(--surface-border);
   border-radius: 50%;
-  box-shadow: 0 0 14px var(--primary-glow), inset 0 0 10px rgba(0,0,0,0.5);
-  background: radial-gradient(circle, rgba(0,0,0,0.25) 0%, rgba(0,0,0,0.5) 100%);
+  border: 2px solid var(--surface-border);
+  background:
+    radial-gradient(circle at center, rgba(0,0,0,0.1) 40%, rgba(0,0,0,0.6) 100%);
+  box-shadow:
+    0 0 12px var(--primary-glow),
+    inset 0 0 14px rgba(0,0,0,0.6);
+  overflow: hidden;
+}
+/* Inner tick circle (thin marks every 30°) */
+.compass-ring::before {
+  content: '';
+  position: absolute;
+  inset: 6px;
+  border-radius: 50%;
+  border: 1px solid rgba(255,255,255,0.06);
+  background: repeating-conic-gradient(
+    from 0deg,
+    var(--surface-border) 0deg 1deg,
+    transparent 1deg 30deg
+  );
+  opacity: 0.5;
+}
+/* Rotating glow halo — spins slowly, theme-colored */
+.compass-ring::after {
+  content: '';
+  position: absolute;
+  inset: -8px;
+  border-radius: 50%;
+  background: conic-gradient(
+    from 0deg,
+    transparent 0deg,
+    var(--primary-glow) 40deg,
+    transparent 80deg,
+    transparent 180deg,
+    var(--accent-glow) 220deg,
+    transparent 260deg
+  );
+  opacity: 0.18;
+  animation: compassGlow 8s linear infinite;
+  pointer-events: none;
+}
+@keyframes compassGlow {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
 }
 .compass-tick {
   position: absolute;
@@ -569,28 +611,35 @@ body[data-conn="off"] .conn-label::after { content: 'OFFLINE'; }
   font-size: 10px;
   font-weight: 700;
   color: var(--text-dim);
-  text-shadow: 0 0 4px var(--primary-glow);
+  text-shadow: 0 0 6px var(--primary-glow);
+  z-index: 2;
 }
-.compass-n { top: 5px;  left: 50%; transform: translateX(-50%); color: var(--primary); font-size: 12px; }
-.compass-e { right: 6px; top: 50%; transform: translateY(-50%); }
-.compass-s { bottom: 5px; left: 50%; transform: translateX(-50%); }
-.compass-w { left: 6px;  top: 50%; transform: translateY(-50%); }
+.compass-n { top: 7px;  left: 50%; transform: translateX(-50%); color: var(--primary); font-size: 13px; font-weight: 900; }
+.compass-e { right: 8px; top: 50%; transform: translateY(-50%); }
+.compass-s { bottom: 7px; left: 50%; transform: translateX(-50%); }
+.compass-w { left: 8px;  top: 50%; transform: translateY(-50%); }
 .compass-needle {
   position: absolute;
   inset: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: transform 0.2s ease-out;
-  filter: drop-shadow(0 0 6px var(--primary-glow));
+  transition: transform 0.18s ease-out;
+  z-index: 3;
+  filter: drop-shadow(0 0 8px var(--primary-glow));
 }
-.compass-needle svg {
-  display: block;
-}
-/* When we have a partner, show a small indicator */
+.compass-needle svg { display: block; }
+/* Partner-connected: ring pulses, brighter */
 .compass.has-partner .compass-ring {
   border-color: var(--primary);
-  box-shadow: 0 0 18px var(--primary-glow), inset 0 0 10px rgba(0,0,0,0.5);
+  box-shadow:
+    0 0 22px var(--primary-glow),
+    inset 0 0 14px rgba(0,0,0,0.5);
+  animation: compassPulse 2.5s ease-in-out infinite;
+}
+@keyframes compassPulse {
+  0%, 100% { box-shadow: 0 0 14px var(--primary-glow), inset 0 0 12px rgba(0,0,0,0.5); }
+  50%      { box-shadow: 0 0 28px var(--primary-glow), inset 0 0 16px rgba(0,0,0,0.4); }
 }
 .compass-dist {
   position: absolute;
@@ -599,13 +648,30 @@ body[data-conn="off"] .conn-label::after { content: 'OFFLINE'; }
   transform: translateX(-50%);
   font-family: 'Share Tech Mono', monospace;
   font-size: 11px;
+  letter-spacing: 1px;
   color: var(--primary);
-  text-shadow: 0 0 6px var(--primary-glow);
+  text-shadow: 0 0 8px var(--primary-glow);
   white-space: nowrap;
   opacity: 0;
   transition: opacity 0.3s;
 }
 .compass.has-partner .compass-dist { opacity: 1; }
+
+/* ---- FX indicator (voice effect icon in channel display) ---- */
+.fx-indicator {
+  margin-top: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  pointer-events: none;
+}
+.fx-icon {
+  font-size: 28px;
+  filter: drop-shadow(0 0 6px var(--primary-glow));
+  transition: transform 0.2s;
+}
+
 .corner-tag {
   position: absolute;
   padding: 4px 10px;
@@ -615,7 +681,6 @@ body[data-conn="off"] .conn-label::after { content: 'OFFLINE'; }
   font-family: 'Share Tech Mono', monospace;
   pointer-events: none;
 }
-.ct-tl { top: 8px; left: 10px; }
 .ct-tr { top: 8px; right: 10px; }
 .ct-bl { bottom: 8px; left: 10px; }
 .ct-br { bottom: 8px; right: 10px; }
@@ -1050,16 +1115,31 @@ body[data-state="on"] .power-btn {
           <div class="compass-tick compass-w">W</div>
         </div>
         <div class="compass-needle" id="compassNeedle">
-          <svg viewBox="0 0 40 80" width="34" height="68" xmlns="http://www.w3.org/2000/svg">
-            <polygon points="20,2 27,48 20,40 13,48" fill="#ff3040" stroke="#ff6060" stroke-width="0.5"/>
-            <polygon points="20,78 13,48 20,56 27,48" fill="#667788" stroke="#8899aa" stroke-width="0.5"/>
-            <circle cx="20" cy="40" r="3.5" fill="#ffffff" stroke="#aabbcc" stroke-width="0.8"/>
+          <svg viewBox="0 0 60 100" width="42" height="70" xmlns="http://www.w3.org/2000/svg">
+            <!-- North half: sharp arrow in theme primary color -->
+            <defs>
+              <linearGradient id="needleN" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stop-color="#ff3040"/>
+                <stop offset="100%" stop-color="#cc1020"/>
+              </linearGradient>
+              <linearGradient id="needleS" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stop-color="#556677"/>
+                <stop offset="100%" stop-color="#334455"/>
+              </linearGradient>
+            </defs>
+            <polygon points="30,4 36,48 30,42 24,48" fill="url(#needleN)" stroke="#ff5060" stroke-width="0.6" stroke-linejoin="round"/>
+            <polygon points="30,96 24,52 30,58 36,52" fill="url(#needleS)" stroke="#667788" stroke-width="0.6" stroke-linejoin="round"/>
+            <!-- Center hub -->
+            <circle cx="30" cy="50" r="5" fill="none" stroke="var(--primary, #fff)" stroke-width="1.5" opacity="0.7"/>
+            <circle cx="30" cy="50" r="2" fill="var(--primary, #fff)" opacity="0.9"/>
           </svg>
         </div>
         <div class="compass-dist" id="compassDist"></div>
       </div>
+      <div class="fx-indicator" id="fxTag" title="Stimmeffekt">
+        <span class="fx-icon" id="fxIcon">🎙</span>
+      </div>
     </div>
-    <div class="corner-tag ct-tl" id="fxTag">FX: NORMAL</div>
     <div class="corner-tag ct-tr"></div>
     <div class="corner-tag ct-bl" id="sigTag">SIG: --</div>
     <div class="corner-tag ct-br" id="clockTag">--:--</div>
@@ -1158,7 +1238,13 @@ const MODES = [
 ];
 
 // ---------- Voice effects (applied to outgoing audio) ----------
-const EFFECTS = ['NORMAL', 'ROBOTER', 'TIEF', 'HOCH', 'ALIEN'];
+const EFFECTS = [
+  { name: 'NORMAL',  icon: '🎙' },
+  { name: 'ROBOTER', icon: '🤖' },
+  { name: 'TIEF',    icon: '🐻' },
+  { name: 'HOCH',    icon: '🐿️' },
+  { name: 'ALIEN',   icon: '👽' },
+];
 
 // ---------- State ----------
 // ---------- Persistent storage (own ID + last partner) ----------
@@ -1222,6 +1308,7 @@ const els = {
   scanBtn: $('scanBtn'),
   fxBtn: $('fxBtn'),
   fxTag: $('fxTag'),
+  fxIcon: $('fxIcon'),
   sosBtn: $('sosBtn'),
   powerBtn: $('powerBtn'),
   compass: $('compass'),
@@ -1587,7 +1674,7 @@ async function rebuildOutgoingStream() {
   await ensureMic();
   disposeEffectChain();
   const ctx = state.ctx;
-  const chain = buildEffectChain(EFFECTS[state.effect]);
+  const chain = buildEffectChain(EFFECTS[state.effect].name);
   state.effectChain = chain;
   state.outMute = chain.mute;
   // Connect raw mic source into the chain's input
@@ -2040,9 +2127,10 @@ function cycleMode(delta) {
 
 async function cycleEffect() {
   state.effect = (state.effect + 1) % EFFECTS.length;
-  els.fxTag.textContent = 'FX: ' + EFFECTS[state.effect];
+  const fx = EFFECTS[state.effect];
+  if (els.fxIcon) els.fxIcon.textContent = fx.icon;
   playClick(420, 0.04, 0.12);
-  toast('Effekt: ' + EFFECTS[state.effect]);
+  toast(fx.icon + ' ' + fx.name);
   if (navigator.vibrate) navigator.vibrate(8);
 
   // Rebuild outgoing stream so the new effect applies
@@ -2226,34 +2314,54 @@ function startCompass() {
   }
 
   // Device orientation (compass heading)
-  const onOrientation = (e) => {
-    // iOS: webkitCompassHeading is degrees from north (clockwise)
-    // Android: e.alpha is degrees from north (counterclockwise for absolute)
+  // Track whether we have absolute orientation so we can prefer it
+  let hasAbsolute = false;
+
+  const onAbsoluteOrientation = (e) => {
+    hasAbsolute = true;
     if (e.webkitCompassHeading != null) {
       state.heading = e.webkitCompassHeading;
     } else if (e.alpha != null) {
-      // e.absolute = true means alpha is relative to north
-      state.heading = e.absolute ? (360 - e.alpha) : null;
+      state.heading = (360 - e.alpha) % 360;
     }
     updateCompass();
   };
 
-  // iOS 13+ requires permission
+  const onOrientation = (e) => {
+    // Skip if we already get absolute events
+    if (hasAbsolute) return;
+    if (e.webkitCompassHeading != null) {
+      // iOS: webkitCompassHeading is degrees from north (clockwise)
+      state.heading = e.webkitCompassHeading;
+    } else if (e.alpha != null) {
+      // Android non-absolute: alpha is relative — use it anyway as best-effort
+      // (on most Android devices this IS relative to north despite absolute=false)
+      state.heading = (360 - e.alpha) % 360;
+    }
+    updateCompass();
+  };
+
+  function listenOrientation() {
+    window.addEventListener('deviceorientationabsolute', onAbsoluteOrientation, true);
+    window.addEventListener('deviceorientation', onOrientation, true);
+  }
+
+  // iOS 13+ requires a user gesture for requestPermission — we call it here
+  // (startCompass is called from powerOn, which is triggered by a tap)
   if (typeof DeviceOrientationEvent !== 'undefined' &&
       typeof DeviceOrientationEvent.requestPermission === 'function') {
     DeviceOrientationEvent.requestPermission()
       .then((resp) => {
-        if (resp === 'granted') window.addEventListener('deviceorientationabsolute', onOrientation, true);
-        // Fallback to non-absolute
-        window.addEventListener('deviceorientation', onOrientation, true);
+        if (resp === 'granted') listenOrientation();
+        else console.warn('[Compass] orientation permission denied');
       })
-      .catch(() => {
-        window.addEventListener('deviceorientation', onOrientation, true);
+      .catch((e) => {
+        console.warn('[Compass] permission error', e);
+        // Try anyway — some iOS versions still fire events
+        listenOrientation();
       });
   } else {
-    // Try absolute first (Android), fallback to regular
-    window.addEventListener('deviceorientationabsolute', onOrientation, true);
-    window.addEventListener('deviceorientation', onOrientation, true);
+    listenOrientation();
   }
 }
 
