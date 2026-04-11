@@ -2275,12 +2275,27 @@ function formatDist(m) {
   return (m / 1000).toFixed(1) + ' km';
 }
 
+// Cumulative rotation tracking — avoids the 360°→0° full-spin problem
+let _dialRot = 0;
+let _partnerRot = 0;
+
+function shortestRotation(current, target) {
+  // Find the shortest path from current cumulative angle to the new target (0-360)
+  const targetNorm = ((target % 360) + 360) % 360;
+  const currentNorm = ((current % 360) + 360) % 360;
+  let delta = targetNorm - currentNorm;
+  if (delta > 180) delta -= 360;
+  if (delta < -180) delta += 360;
+  return current + delta;
+}
+
 function updateCompass() {
   const heading = state.heading != null ? state.heading : 0;
 
   // 1) Rotate the dial so "N" always faces geographic north
-  //    (negative heading because the dial turns opposite to the phone)
-  els.compassDial.style.transform = 'rotate(' + (-heading) + 'deg)';
+  const dialTarget = -heading;
+  _dialRot = shortestRotation(_dialRot, dialTarget);
+  els.compassDial.style.transform = 'rotate(' + _dialRot + 'deg)';
 
   // 2) If partner position is known, show the partner arrow
   const hasPartner = state.myPos && state.partnerPos;
@@ -2290,9 +2305,9 @@ function updateCompass() {
                               state.partnerPos.lat, state.partnerPos.lng);
     const dist = distanceTo(state.myPos.lat, state.myPos.lng,
                             state.partnerPos.lat, state.partnerPos.lng);
-    // Partner arrow rotation: bearing minus heading (so it points physically correct)
-    const rotation = bearing - heading;
-    els.compassPartner.style.transform = 'rotate(' + rotation + 'deg)';
+    const partnerTarget = bearing - heading;
+    _partnerRot = shortestRotation(_partnerRot, partnerTarget);
+    els.compassPartner.style.transform = 'rotate(' + _partnerRot + 'deg)';
     els.compassDist.textContent = formatDist(dist);
   } else {
     els.compass.classList.remove('has-partner');
