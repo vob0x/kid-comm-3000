@@ -624,7 +624,7 @@ body[data-conn="off"] .conn-label::after { content: 'OFFLINE'; }
 /* FAR (>500m): normal theme glow, slow pulse */
 .compass.has-partner .compass-bezel {
   border-color: var(--primary);
-  animation: compassPulseFar 3s ease-in-out infinite;
+  animation: compassPulseFar 5s ease-in-out infinite;
 }
 @keyframes compassPulseFar {
   0%, 100% { box-shadow: 0 0 10px var(--primary-glow), inset 0 0 6px rgba(0,0,0,0.5); }
@@ -634,7 +634,7 @@ body[data-conn="off"] .conn-label::after { content: 'OFFLINE'; }
 /* MEDIUM (100m–500m): yellow/warm glow, medium pulse */
 .compass.prox-medium .compass-bezel {
   border-color: #ffcc00 !important;
-  animation: compassPulseMedium 2s ease-in-out infinite !important;
+  animation: compassPulseMedium 4s ease-in-out infinite !important;
 }
 .compass.prox-medium .compass-hub {
   background: #ffcc00;
@@ -650,7 +650,7 @@ body[data-conn="off"] .conn-label::after { content: 'OFFLINE'; }
 .compass.prox-close .compass-bezel {
   border-color: #ff8800 !important;
   border-width: 3px;
-  animation: compassPulseClose 1.3s ease-in-out infinite !important;
+  animation: compassPulseClose 2.5s ease-in-out infinite !important;
 }
 .compass.prox-close .compass-hub {
   width: 14px; height: 14px; margin: -7px 0 0 -7px;
@@ -659,7 +659,7 @@ body[data-conn="off"] .conn-label::after { content: 'OFFLINE'; }
 }
 .compass.prox-close .compass-dist { color: #ff8800; text-shadow: 0 0 10px rgba(255, 136, 0, 0.7); }
 .compass.prox-close .compass-ping {
-  animation: radarPing 1.3s ease-out infinite;
+  animation: radarPing 2.5s ease-out infinite;
 }
 @keyframes compassPulseClose {
   0%, 100% { box-shadow: 0 0 16px rgba(255, 136, 0, 0.6), inset 0 0 10px rgba(0,0,0,0.4); }
@@ -670,17 +670,17 @@ body[data-conn="off"] .conn-label::after { content: 'OFFLINE'; }
 .compass.prox-hot .compass-bezel {
   border-color: #00ff66 !important;
   border-width: 3px;
-  animation: compassPulseHot 0.7s ease-in-out infinite !important;
+  animation: compassPulseHot 1.5s ease-in-out infinite !important;
 }
 .compass.prox-hot .compass-hub {
   width: 18px; height: 18px; margin: -9px 0 0 -9px;
   background: #00ff66;
   box-shadow: 0 0 22px rgba(0, 255, 102, 1);
-  animation: hubGlow 0.7s ease-in-out infinite;
+  animation: hubGlow 1.5s ease-in-out infinite;
 }
 .compass.prox-hot .compass-dist { color: #00ff66; text-shadow: 0 0 12px rgba(0, 255, 102, 0.8); font-weight: 700; }
 .compass.prox-hot .compass-ping {
-  animation: radarPing 0.8s ease-out infinite;
+  animation: radarPing 1.8s ease-out infinite;
   border-color: #00ff66;
 }
 .compass.prox-hot { transform: scale(1.06); }
@@ -2048,32 +2048,58 @@ function bindCall(call) {
     }
   });
   call.on('close', () => {
+    const wasConnected = state.connected;
     state.connected = false;
+    state.call = null;
     setConn('ready');
     setTalk('off');
     stopTransmit();
     els.sigTag.textContent = 'SIG: READY';
     playSquelchClose();
-    toast('Getrennt');
+    // Auto-reconnect if the connection dropped unexpectedly (not user power-off)
+    if (wasConnected && state.powered && state.partnerId) {
+      toast('Getrennt – verbinde neu…');
+      scheduleReconnect(3000);
+    } else {
+      toast('Getrennt');
+    }
   });
   call.on('error', (e) => { console.error(e); toast('Call-Fehler: ' + (e && e.message || e)); });
 
-  // ICE / connection diagnostics — log to console + show user-visible status
-  // when ICE actually fails (the typical CGNAT-without-TURN failure mode).
+  // ICE / connection diagnostics + auto-recovery on network change
   const pc = call.peerConnection;
   if (pc) {
+    let iceRestartAttempted = false;
     pc.addEventListener('iceconnectionstatechange', () => {
       console.log('[ICE]', pc.iceConnectionState);
       if (pc.iceConnectionState === 'failed') {
-        toast('ICE failed – TURN nötig?');
-        setConn('ready');
-        try { call.close(); } catch(_) {}
+        // Try ICE restart first (works when both peers are still online)
+        if (!iceRestartAttempted && pc.restartIce) {
+          iceRestartAttempted = true;
+          console.log('[ICE] Attempting ICE restart...');
+          toast('Netzwerkwechsel – verbinde neu…');
+          els.sigTag.textContent = 'SIG: ░░░░';
+          try { pc.restartIce(); } catch(_) {}
+          // If still failed after 8s, close and full reconnect
+          setTimeout(() => {
+            if (pc.iceConnectionState === 'failed' || pc.iceConnectionState === 'disconnected') {
+              console.log('[ICE] Restart failed, full reconnect');
+              try { call.close(); } catch(_) {}
+            }
+          }, 8000);
+        } else {
+          toast('Verbindung verloren');
+          setConn('ready');
+          try { call.close(); } catch(_) {}
+        }
       } else if (pc.iceConnectionState === 'disconnected') {
         els.sigTag.textContent = 'SIG: ░░░░';
+        toast('Signal unterbrochen…');
+        // ICE disconnected often recovers on its own within a few seconds;
+        // if not, it transitions to 'failed' and we handle it above.
       } else if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed') {
+        iceRestartAttempted = false; // reset for next time
         els.sigTag.textContent = 'SIG: ████';
-        // Log which candidate pair we ended up using — helps diagnose
-        // direct vs relay over mobile networks.
         if (pc.getStats) pc.getStats(null).then((stats) => {
           stats.forEach((r) => {
             if (r.type === 'candidate-pair' && r.state === 'succeeded' && r.nominated) {
@@ -2086,6 +2112,25 @@ function bindCall(call) {
       }
     });
   }
+}
+
+// ---- Auto-reconnect scheduler ----
+let _reconnectTimer = null;
+function scheduleReconnect(delayMs) {
+  clearTimeout(_reconnectTimer);
+  _reconnectTimer = setTimeout(() => {
+    if (!state.powered || state.connected) return;
+    if (!state.partnerId) return;
+    if (!state.peer || state.peer.disconnected || state.peer.destroyed) {
+      // PeerJS broker gone — reinit peer, then connect
+      initPeer();
+      setTimeout(() => {
+        if (state.partnerId && !state.connected) connectToPeer(state.partnerId);
+      }, 2000);
+    } else {
+      connectToPeer(state.partnerId);
+    }
+  }, delayMs);
 }
 
 function bindDataConn(dc) {
@@ -2651,10 +2696,29 @@ async function powerOn() {
   startCompass();
   setInterval(updateClock, 1000);
   updateClock();
+
+  // Network recovery — auto-reconnect when WiFi comes back (e.g. devolo switch)
+  window.addEventListener('online', onNetworkBack);
+}
+
+function onNetworkBack() {
+  if (!state.powered) return;
+  console.log('[NET] Back online');
+  toast('Netzwerk zurück…');
+  // Give the network a moment to stabilize after WiFi switch
+  if (!state.connected && state.partnerId) {
+    scheduleReconnect(2000);
+  }
+  // Also make sure the PeerJS broker connection is alive
+  if (state.peer && state.peer.disconnected) {
+    try { state.peer.reconnect(); } catch(_) {}
+  }
 }
 
 function powerOff() {
   if (!state.powered) return;
+  window.removeEventListener('online', onNetworkBack);
+  clearTimeout(_reconnectTimer);
   playShutdownSequence();
   stopTransmit();
   try { if (state.call) state.call.close(); } catch(e) {}
