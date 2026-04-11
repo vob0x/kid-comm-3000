@@ -2319,6 +2319,13 @@ function updateCompass() {
 function startCompass() {
   // GPS
   if ('geolocation' in navigator) {
+    // Immediate diagnostic test
+    toast('🔍 GPS-Test läuft...');
+    navigator.geolocation.getCurrentPosition(
+      (p) => { toast('✅ GPS OK: ' + p.coords.latitude.toFixed(4) + ',' + p.coords.longitude.toFixed(4) + ' ±' + Math.round(p.coords.accuracy) + 'm'); },
+      (e) => { toast('❌ GPS-Test fehlgeschlagen: Code=' + e.code + ' ' + e.message); },
+      { enableHighAccuracy: false, maximumAge: Infinity, timeout: 20000 }
+    );
     let gotFix = false;
     const geoSuccess = (pos) => {
       gotFix = true;
