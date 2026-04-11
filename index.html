@@ -2016,6 +2016,7 @@ function bindDataConn(dc) {
         if (navigator.vibrate) navigator.vibrate([120, 80, 120, 80, 120]);
       } else if (obj.type === 'pos' && typeof obj.lat === 'number') {
         state.partnerPos = { lat: obj.lat, lng: obj.lng };
+        toast('📍 Partner-Pos: ' + obj.lat.toFixed(4) + ',' + obj.lng.toFixed(4) + (state.myPos ? ' · Eigene: OK' : ' · Eigene: FEHLT'));
         updateCompass();
       }
     } catch(e) { console.error(e); }
@@ -2331,7 +2332,7 @@ function startCompass() {
         }
         updateCompass();
       },
-      (err) => console.warn('[GPS]', err.message),
+      (err) => { console.warn('[GPS]', err.message); toast('⚠️ GPS-Fehler: ' + err.message); },
       { enableHighAccuracy: true, maximumAge: 3000, timeout: 8000 }
     );
     // Periodic position ping every 5s — ensures partner gets our position even if
