@@ -2016,7 +2016,6 @@ function bindDataConn(dc) {
         if (navigator.vibrate) navigator.vibrate([120, 80, 120, 80, 120]);
       } else if (obj.type === 'pos' && typeof obj.lat === 'number') {
         state.partnerPos = { lat: obj.lat, lng: obj.lng };
-        toast('📍 Partner-Pos: ' + obj.lat.toFixed(4) + ',' + obj.lng.toFixed(4) + (state.myPos ? ' · Eigene: OK' : ' · Eigene: FEHLT'));
         updateCompass();
       }
     } catch(e) { console.error(e); }
@@ -2301,17 +2300,29 @@ function updateCompass() {
   // 2) If partner position is known, show the partner arrow
   const hasPartner = state.myPos && state.partnerPos;
   if (hasPartner) {
-    els.compass.classList.add('has-partner');
     const bearing = bearingTo(state.myPos.lat, state.myPos.lng,
                               state.partnerPos.lat, state.partnerPos.lng);
     const dist = distanceTo(state.myPos.lat, state.myPos.lng,
                             state.partnerPos.lat, state.partnerPos.lng);
-    const partnerTarget = bearing - heading;
-    _partnerRot = shortestRotation(_partnerRot, partnerTarget);
-    els.compassPartner.style.transform = 'rotate(' + _partnerRot + 'deg)';
-    els.compassDist.textContent = formatDist(dist);
+    // When very close (<100m), GPS accuracy makes bearing unreliable
+    if (dist < 100) {
+      els.compass.classList.add('has-partner');
+      els.compass.classList.add('nearby');
+      els.compassPartner.style.transform = 'rotate(0deg)';
+      els.compassPartner.style.opacity = '0.3';
+      els.compassDist.textContent = '📍 Nah! ~' + Math.round(dist) + 'm';
+    } else {
+      els.compass.classList.add('has-partner');
+      els.compass.classList.remove('nearby');
+      els.compassPartner.style.opacity = '';
+      const partnerTarget = bearing - heading;
+      _partnerRot = shortestRotation(_partnerRot, partnerTarget);
+      els.compassPartner.style.transform = 'rotate(' + _partnerRot + 'deg)';
+      els.compassDist.textContent = formatDist(dist);
+    }
   } else {
     els.compass.classList.remove('has-partner');
+    els.compass.classList.remove('nearby');
     els.compassDist.textContent = '';
   }
 }
@@ -2319,39 +2330,6 @@ function updateCompass() {
 function startCompass() {
   // GPS
   if ('geolocation' in navigator) {
-    // Persistent debug overlay — won't be overwritten by toasts
-    const dbg = document.createElement('div');
-    dbg.id = 'gpsDebug';
-    dbg.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99999;background:rgba(0,0,0,0.9);color:#0f0;font:12px monospace;padding:8px;max-height:40vh;overflow:auto;';
-    dbg.textContent = '🔍 GPS-Diagnose gestartet...\n';
-    document.body.appendChild(dbg);
-    function dbgLog(msg) { dbg.textContent += msg + '\n'; dbg.scrollTop = dbg.scrollHeight; }
-
-    // 1) Check Permissions API
-    if (navigator.permissions) {
-      navigator.permissions.query({ name: 'geolocation' }).then(r => {
-        dbgLog('Permissions API: ' + r.state);
-      }).catch(e => dbgLog('Permissions API Fehler: ' + e.message));
-    } else {
-      dbgLog('Permissions API: nicht verfügbar');
-    }
-
-    // 2) Test getCurrentPosition with maximum leniency
-    dbgLog('getCurrentPosition(lowAcc, maxAge=∞, timeout=10s)...');
-    navigator.geolocation.getCurrentPosition(
-      (p) => { dbgLog('✅ getCurrentPosition OK: ' + p.coords.latitude.toFixed(5) + ',' + p.coords.longitude.toFixed(5) + ' ±' + Math.round(p.coords.accuracy) + 'm'); },
-      (e) => { dbgLog('❌ getCurrentPosition FEHLER: Code=' + e.code + ' (' + ['','PERMISSION_DENIED','POSITION_UNAVAILABLE','TIMEOUT'][e.code] + ') ' + e.message); },
-      { enableHighAccuracy: false, maximumAge: Infinity, timeout: 10000 }
-    );
-
-    // 3) Test with high accuracy
-    dbgLog('getCurrentPosition(highAcc, timeout=10s)...');
-    navigator.geolocation.getCurrentPosition(
-      (p) => { dbgLog('✅ highAcc OK: ' + p.coords.latitude.toFixed(5) + ',' + p.coords.longitude.toFixed(5) + ' ±' + Math.round(p.coords.accuracy) + 'm'); },
-      (e) => { dbgLog('❌ highAcc FEHLER: Code=' + e.code + ' (' + ['','PERMISSION_DENIED','POSITION_UNAVAILABLE','TIMEOUT'][e.code] + ') ' + e.message); },
-      { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 }
-    );
-
     let gotFix = false;
     const geoSuccess = (pos) => {
       gotFix = true;
@@ -2385,9 +2363,9 @@ function startCompass() {
       () => {},
       { enableHighAccuracy: false, maximumAge: 120000, timeout: 8000 }
     );
-    // Warn if still no fix after 20s
+    // Warn if still no fix after 20s (silent — just log)
     setTimeout(() => {
-      if (!gotFix) toast('⚠️ Warte auf GPS-Position...');
+      if (!gotFix) console.warn('[GPS] Still no fix after 20 s');
     }, 20000);
     // Periodic position ping every 5s — ensures partner gets our position even if
     // connection was established after first GPS fix
