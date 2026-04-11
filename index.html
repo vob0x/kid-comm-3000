@@ -2312,71 +2312,126 @@ function startCompass() {
     );
   }
 
-  // Device orientation (compass heading)
-  // Track whether we have absolute orientation so we can prefer it
-  let hasAbsolute = false;
+  // ---- Device orientation (compass heading) ----
+  // Strategy: 3 levels, first one that works wins.
+  //   1) Generic Sensor API (AbsoluteOrientationSensor) — best on Android Chrome
+  //   2) deviceorientationabsolute event — some Android + Firefox
+  //   3) deviceorientation event — iOS (webkitCompassHeading) + last-resort Android
+  let headingSource = 'none';  // tracks which source is active
+  state._compassSensor = null; // ref for cleanup
 
-  const onAbsoluteOrientation = (e) => {
-    hasAbsolute = true;
-    if (e.webkitCompassHeading != null) {
-      state.heading = e.webkitCompassHeading;
-    } else if (e.alpha != null) {
-      state.heading = (360 - e.alpha) % 360;
-    }
+  function setHeading(deg, source) {
+    // Higher-priority source wins; don't downgrade once a good source is active
+    const priority = { sensor: 3, absolute: 2, event: 1, none: 0 };
+    if (priority[source] < priority[headingSource]) return;
+    headingSource = source;
+    state.heading = ((deg % 360) + 360) % 360;
     updateCompass();
-  };
-
-  const onOrientation = (e) => {
-    // Skip if we already get absolute events
-    if (hasAbsolute) return;
-    if (e.webkitCompassHeading != null) {
-      // iOS: webkitCompassHeading is degrees from north (clockwise)
-      state.heading = e.webkitCompassHeading;
-    } else if (e.alpha != null) {
-      // Android non-absolute: alpha is relative — use it anyway as best-effort
-      // (on most Android devices this IS relative to north despite absolute=false)
-      state.heading = (360 - e.alpha) % 360;
-    }
-    updateCompass();
-  };
-
-  function listenOrientation() {
-    window.addEventListener('deviceorientationabsolute', onAbsoluteOrientation, true);
-    window.addEventListener('deviceorientation', onOrientation, true);
-
-    // If no orientation event fires within 4 s, log a warning
-    setTimeout(() => {
-      if (state.heading == null) {
-        console.warn('[Compass] No orientation events after 4 s — sensor not available');
-      }
-    }, 4000);
   }
 
-  // iOS 13+ requires a user gesture for requestPermission — we call it here
-  // (startCompass is called from powerOn, which is triggered by a tap)
-  if (typeof DeviceOrientationEvent !== 'undefined' &&
-      typeof DeviceOrientationEvent.requestPermission === 'function') {
+  // ---- 1) Generic Sensor API (Android Chrome 67+) ----
+  function trySensorAPI() {
+    if (!('AbsoluteOrientationSensor' in window)) return false;
+    try {
+      const sensor = new AbsoluteOrientationSensor({ frequency: 15, referenceFrame: 'device' });
+      sensor.addEventListener('reading', () => {
+        // Quaternion [x, y, z, w] → compass heading
+        const [qx, qy, qz, qw] = sensor.quaternion;
+        // Heading from quaternion (rotation around earth-Z in ENU frame)
+        const ysqr = qy * qy;
+        const t1 = 2.0 * (qw * qz + qx * qy);
+        const t2 = 1.0 - 2.0 * (ysqr + qz * qz);
+        let heading = Math.atan2(t1, t2) * (180 / Math.PI);
+        // atan2 gives heading CW from East; convert to CW from North
+        heading = (90 - heading + 360) % 360;
+        setHeading(heading, 'sensor');
+      });
+      sensor.addEventListener('error', (e) => {
+        console.warn('[Compass] Sensor error:', e.error.name, e.error.message);
+      });
+      sensor.start();
+      state._compassSensor = sensor;
+      console.log('[Compass] Using AbsoluteOrientationSensor');
+      return true;
+    } catch (e) {
+      console.warn('[Compass] Sensor API failed:', e.message);
+      return false;
+    }
+  }
+
+  // ---- 2+3) DeviceOrientation events (iOS + fallback) ----
+  function listenOrientationEvents() {
+    const onAbsolute = (e) => {
+      if (e.alpha != null) setHeading((360 - e.alpha) % 360, 'absolute');
+    };
+    const onEvent = (e) => {
+      if (e.webkitCompassHeading != null) {
+        // iOS: webkitCompassHeading is degrees CW from north
+        setHeading(e.webkitCompassHeading, 'absolute');
+      } else if (e.alpha != null && headingSource !== 'sensor' && headingSource !== 'absolute') {
+        // Non-absolute alpha as last resort
+        setHeading((360 - e.alpha) % 360, 'event');
+      }
+    };
+    window.addEventListener('deviceorientationabsolute', onAbsolute, true);
+    window.addEventListener('deviceorientation', onEvent, true);
+  }
+
+  // ---- Kick it off ----
+
+  // On Android, try Sensor API with permissions
+  if ('AbsoluteOrientationSensor' in window && navigator.permissions) {
+    // Request sensor permissions first
+    Promise.all([
+      navigator.permissions.query({ name: 'accelerometer' }).catch(() => ({ state: 'granted' })),
+      navigator.permissions.query({ name: 'magnetometer' }).catch(() => ({ state: 'granted' })),
+      navigator.permissions.query({ name: 'gyroscope' }).catch(() => ({ state: 'granted' })),
+    ]).then((results) => {
+      const allGranted = results.every(r => r.state === 'granted' || r.state === 'prompt');
+      if (allGranted) {
+        if (!trySensorAPI()) listenOrientationEvents();
+      } else {
+        console.warn('[Compass] Sensor permissions denied');
+        listenOrientationEvents();
+      }
+    }).catch(() => {
+      trySensorAPI() || listenOrientationEvents();
+    });
+  }
+  // On iOS, request DeviceOrientation permission (requires user gesture)
+  else if (typeof DeviceOrientationEvent !== 'undefined' &&
+           typeof DeviceOrientationEvent.requestPermission === 'function') {
     DeviceOrientationEvent.requestPermission()
       .then((resp) => {
-        if (resp === 'granted') listenOrientation();
-        else {
-          console.warn('[Compass] orientation permission denied');
-          listenOrientation(); // try anyway
-        }
+        if (resp === 'granted') listenOrientationEvents();
+        else listenOrientationEvents(); // try anyway
       })
-      .catch((e) => {
-        console.warn('[Compass] permission error', e);
-        listenOrientation();
-      });
-  } else {
-    listenOrientation();
+      .catch(() => listenOrientationEvents());
   }
+  // Fallback: just listen
+  else {
+    trySensorAPI() || listenOrientationEvents();
+  }
+
+  // Timeout: if nothing works after 4 s, warn
+  setTimeout(() => {
+    if (headingSource === 'none') {
+      console.warn('[Compass] No heading source after 4 s');
+      toast('Kompass: Sensor nicht verfügbar');
+    } else {
+      console.log('[Compass] Active source:', headingSource);
+    }
+  }, 4000);
 }
 
 function stopCompass() {
   if (state.geoWatchId != null) {
     navigator.geolocation.clearWatch(state.geoWatchId);
     state.geoWatchId = null;
+  }
+  if (state._compassSensor) {
+    try { state._compassSensor.stop(); } catch(_) {}
+    state._compassSensor = null;
   }
   state.myPos = null;
   state.partnerPos = null;
