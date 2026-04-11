@@ -551,96 +551,68 @@ body[data-conn="off"] .conn-label::after { content: 'OFFLINE'; }
 /* ---- Compass ---- */
 .compass {
   position: relative;
-  width: 110px;
-  height: 110px;
+  width: 115px;
+  height: 115px;
   margin-top: 6px;
 }
-/* Outer ring: double border + rotating glow */
-.compass-ring {
+/* Bezel: outer decorative ring */
+.compass-bezel {
   position: absolute;
-  inset: 0;
+  inset: -3px;
   border-radius: 50%;
   border: 2px solid var(--surface-border);
-  background:
-    radial-gradient(circle at center, rgba(0,0,0,0.1) 40%, rgba(0,0,0,0.6) 100%);
-  box-shadow:
-    0 0 12px var(--primary-glow),
-    inset 0 0 14px rgba(0,0,0,0.6);
-  overflow: hidden;
-}
-/* Inner tick circle (thin marks every 30°) */
-.compass-ring::before {
-  content: '';
-  position: absolute;
-  inset: 6px;
-  border-radius: 50%;
-  border: 1px solid rgba(255,255,255,0.06);
-  background: repeating-conic-gradient(
-    from 0deg,
-    var(--surface-border) 0deg 1deg,
-    transparent 1deg 30deg
-  );
-  opacity: 0.5;
-}
-/* Rotating glow halo — spins slowly, theme-colored */
-.compass-ring::after {
-  content: '';
-  position: absolute;
-  inset: -8px;
-  border-radius: 50%;
-  background: conic-gradient(
-    from 0deg,
-    transparent 0deg,
-    var(--primary-glow) 40deg,
-    transparent 80deg,
-    transparent 180deg,
-    var(--accent-glow) 220deg,
-    transparent 260deg
-  );
-  opacity: 0.18;
-  animation: compassGlow 8s linear infinite;
+  box-shadow: 0 0 14px var(--primary-glow), inset 0 0 10px rgba(0,0,0,0.5);
   pointer-events: none;
 }
-@keyframes compassGlow {
-  from { transform: rotate(0deg); }
-  to   { transform: rotate(360deg); }
-}
-.compass-tick {
-  position: absolute;
-  font-family: 'Orbitron', sans-serif;
-  font-size: 10px;
-  font-weight: 700;
-  color: var(--text-dim);
-  text-shadow: 0 0 6px var(--primary-glow);
-  z-index: 2;
-}
-.compass-n { top: 7px;  left: 50%; transform: translateX(-50%); color: var(--primary); font-size: 13px; font-weight: 900; }
-.compass-e { right: 8px; top: 50%; transform: translateY(-50%); }
-.compass-s { bottom: 7px; left: 50%; transform: translateX(-50%); }
-.compass-w { left: 8px;  top: 50%; transform: translateY(-50%); }
-.compass-needle {
+/* Dial: the rotating N/O/S/W disc */
+.compass-dial {
   position: absolute;
   inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(0,0,0,0.15) 30%, rgba(0,0,0,0.55) 100%);
   transition: transform 0.18s ease-out;
-  z-index: 3;
+}
+.compass-dial-svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+/* Partner arrow layer */
+.compass-partner {
+  position: absolute;
+  inset: 0;
+  transition: transform 0.2s ease-out;
+  opacity: 0;
+  pointer-events: none;
   filter: drop-shadow(0 0 8px var(--primary-glow));
 }
-.compass-needle svg { display: block; }
-/* Partner-connected: ring pulses, brighter */
-.compass.has-partner .compass-ring {
+.compass.has-partner .compass-partner { opacity: 1; }
+.compass-partner-svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+/* Center hub dot */
+.compass-hub {
+  position: absolute;
+  top: 50%; left: 50%;
+  width: 10px; height: 10px;
+  margin: -5px 0 0 -5px;
+  border-radius: 50%;
+  background: var(--primary);
+  box-shadow: 0 0 8px var(--primary-glow);
+  z-index: 5;
+}
+/* Partner-connected: bezel pulses */
+.compass.has-partner .compass-bezel {
   border-color: var(--primary);
-  box-shadow:
-    0 0 22px var(--primary-glow),
-    inset 0 0 14px rgba(0,0,0,0.5);
   animation: compassPulse 2.5s ease-in-out infinite;
 }
 @keyframes compassPulse {
-  0%, 100% { box-shadow: 0 0 14px var(--primary-glow), inset 0 0 12px rgba(0,0,0,0.5); }
-  50%      { box-shadow: 0 0 28px var(--primary-glow), inset 0 0 16px rgba(0,0,0,0.4); }
+  0%, 100% { box-shadow: 0 0 12px var(--primary-glow), inset 0 0 8px rgba(0,0,0,0.5); }
+  50%      { box-shadow: 0 0 26px var(--primary-glow), inset 0 0 14px rgba(0,0,0,0.4); }
 }
+/* Distance readout */
 .compass-dist {
   position: absolute;
   bottom: -18px;
@@ -1108,32 +1080,55 @@ body[data-state="on"] .power-btn {
       <div class="ch-big" id="chBig">01</div>
       <div class="ch-small" id="chSmall">KANAL POLIZEI</div>
       <div class="compass" id="compass">
-        <div class="compass-ring">
-          <div class="compass-tick compass-n">N</div>
-          <div class="compass-tick compass-e">O</div>
-          <div class="compass-tick compass-s">S</div>
-          <div class="compass-tick compass-w">W</div>
-        </div>
-        <div class="compass-needle" id="compassNeedle">
-          <svg viewBox="0 0 60 100" width="42" height="70" xmlns="http://www.w3.org/2000/svg">
-            <!-- North half: sharp arrow in theme primary color -->
-            <defs>
-              <linearGradient id="needleN" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stop-color="#ff3040"/>
-                <stop offset="100%" stop-color="#cc1020"/>
-              </linearGradient>
-              <linearGradient id="needleS" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stop-color="#556677"/>
-                <stop offset="100%" stop-color="#334455"/>
-              </linearGradient>
-            </defs>
-            <polygon points="30,4 36,48 30,42 24,48" fill="url(#needleN)" stroke="#ff5060" stroke-width="0.6" stroke-linejoin="round"/>
-            <polygon points="30,96 24,52 30,58 36,52" fill="url(#needleS)" stroke="#667788" stroke-width="0.6" stroke-linejoin="round"/>
-            <!-- Center hub -->
-            <circle cx="30" cy="50" r="5" fill="none" stroke="var(--primary, #fff)" stroke-width="1.5" opacity="0.7"/>
-            <circle cx="30" cy="50" r="2" fill="var(--primary, #fff)" opacity="0.9"/>
+        <!-- Outer decoration ring (static) -->
+        <div class="compass-bezel"></div>
+        <!-- Rotating dial: spins so N always points geographic north -->
+        <div class="compass-dial" id="compassDial">
+          <svg viewBox="0 0 120 120" class="compass-dial-svg" xmlns="http://www.w3.org/2000/svg">
+            <!-- Tick marks every 30° -->
+            <g stroke="var(--text-dim)" stroke-width="1.2" opacity="0.5">
+              <line x1="60" y1="4"  x2="60" y2="12"/>
+              <line x1="60" y1="108" x2="60" y2="116"/>
+              <line x1="4"  y1="60" x2="12" y2="60"/>
+              <line x1="108" y1="60" x2="116" y2="60"/>
+            </g>
+            <g stroke="var(--text-dim)" stroke-width="0.6" opacity="0.3">
+              <line x1="89" y1="8"  x2="85" y2="15"/>
+              <line x1="112" y1="31" x2="105" y2="35"/>
+              <line x1="112" y1="89" x2="105" y2="85"/>
+              <line x1="89" y1="112" x2="85" y2="105"/>
+              <line x1="31" y1="112" x2="35" y2="105"/>
+              <line x1="8"  y1="89" x2="15" y2="85"/>
+              <line x1="8"  y1="31" x2="15" y2="35"/>
+              <line x1="31" y1="8"  x2="35" y2="15"/>
+            </g>
+            <!-- Cardinal labels -->
+            <text x="60" y="24" text-anchor="middle" fill="#ff3040" font-family="Orbitron,sans-serif" font-size="13" font-weight="900">N</text>
+            <text x="104" y="64" text-anchor="middle" fill="var(--text-dim)" font-family="Orbitron,sans-serif" font-size="10" font-weight="700">O</text>
+            <text x="60" y="112" text-anchor="middle" fill="var(--text-dim)" font-family="Orbitron,sans-serif" font-size="10" font-weight="700">S</text>
+            <text x="16" y="64" text-anchor="middle" fill="var(--text-dim)" font-family="Orbitron,sans-serif" font-size="10" font-weight="700">W</text>
+            <!-- North triangle marker -->
+            <polygon points="60,2 56,9 64,9" fill="#ff3040" opacity="0.8"/>
           </svg>
         </div>
+        <!-- Partner arrow (separate layer, rotates independently) -->
+        <div class="compass-partner" id="compassPartner">
+          <svg viewBox="0 0 120 120" class="compass-partner-svg" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <linearGradient id="partnerArrow" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stop-color="var(--primary)"/>
+                <stop offset="100%" stop-color="var(--accent)"/>
+              </linearGradient>
+            </defs>
+            <!-- Arrow pointing up (0°=north, rotated via JS) -->
+            <polygon points="60,10 68,45 60,38 52,45" fill="url(#partnerArrow)" stroke="var(--primary)" stroke-width="0.5" opacity="0.95"/>
+            <!-- Tail -->
+            <line x1="60" y1="58" x2="60" y2="80" stroke="var(--primary)" stroke-width="2" opacity="0.3" stroke-linecap="round"/>
+          </svg>
+        </div>
+        <!-- Center hub -->
+        <div class="compass-hub"></div>
+        <!-- Distance readout -->
         <div class="compass-dist" id="compassDist"></div>
       </div>
       <div class="fx-indicator" id="fxTag" title="Stimmeffekt">
@@ -1312,7 +1307,8 @@ const els = {
   sosBtn: $('sosBtn'),
   powerBtn: $('powerBtn'),
   compass: $('compass'),
-  compassNeedle: $('compassNeedle'),
+  compassDial: $('compassDial'),
+  compassPartner: $('compassPartner'),
   compassDist: $('compassDist'),
   qrModal: $('qrModal'),
   qrHolder: $('qrHolder'),
@@ -2276,22 +2272,25 @@ function formatDist(m) {
 
 function updateCompass() {
   const heading = state.heading != null ? state.heading : 0;
-  const hasPartner = state.myPos && state.partnerPos;
 
+  // 1) Rotate the dial so "N" always faces geographic north
+  //    (negative heading because the dial turns opposite to the phone)
+  els.compassDial.style.transform = 'rotate(' + (-heading) + 'deg)';
+
+  // 2) If partner position is known, show the partner arrow
+  const hasPartner = state.myPos && state.partnerPos;
   if (hasPartner) {
-    // Arrow points toward partner
     els.compass.classList.add('has-partner');
     const bearing = bearingTo(state.myPos.lat, state.myPos.lng,
                               state.partnerPos.lat, state.partnerPos.lng);
     const dist = distanceTo(state.myPos.lat, state.myPos.lng,
                             state.partnerPos.lat, state.partnerPos.lng);
+    // Partner arrow rotation: bearing minus heading (so it points physically correct)
     const rotation = bearing - heading;
-    els.compassNeedle.style.transform = 'rotate(' + rotation + 'deg)';
+    els.compassPartner.style.transform = 'rotate(' + rotation + 'deg)';
     els.compassDist.textContent = formatDist(dist);
   } else {
-    // Regular compass: red tip points north
     els.compass.classList.remove('has-partner');
-    els.compassNeedle.style.transform = 'rotate(' + (-heading) + 'deg)';
     els.compassDist.textContent = '';
   }
 }
@@ -2344,6 +2343,13 @@ function startCompass() {
   function listenOrientation() {
     window.addEventListener('deviceorientationabsolute', onAbsoluteOrientation, true);
     window.addEventListener('deviceorientation', onOrientation, true);
+
+    // If no orientation event fires within 4 s, log a warning
+    setTimeout(() => {
+      if (state.heading == null) {
+        console.warn('[Compass] No orientation events after 4 s — sensor not available');
+      }
+    }, 4000);
   }
 
   // iOS 13+ requires a user gesture for requestPermission — we call it here
@@ -2353,11 +2359,13 @@ function startCompass() {
     DeviceOrientationEvent.requestPermission()
       .then((resp) => {
         if (resp === 'granted') listenOrientation();
-        else console.warn('[Compass] orientation permission denied');
+        else {
+          console.warn('[Compass] orientation permission denied');
+          listenOrientation(); // try anyway
+        }
       })
       .catch((e) => {
         console.warn('[Compass] permission error', e);
-        // Try anyway — some iOS versions still fire events
         listenOrientation();
       });
   } else {
@@ -2374,7 +2382,8 @@ function stopCompass() {
   state.partnerPos = null;
   state.heading = null;
   els.compass.classList.remove('has-partner');
-  els.compassNeedle.style.transform = 'rotate(0deg)';
+  els.compassDial.style.transform = 'rotate(0deg)';
+  els.compassPartner.style.transform = 'rotate(0deg)';
   els.compassDist.textContent = '';
 }
 
