@@ -2319,21 +2319,34 @@ function updateCompass() {
 function startCompass() {
   // GPS
   if ('geolocation' in navigator) {
+    const geoSuccess = (pos) => {
+      state.myPos = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+      // Send position to partner
+      if (state.conn && state.conn.open) {
+        try { state.conn.send({ type: 'pos', lat: state.myPos.lat, lng: state.myPos.lng }); } catch(_) {}
+      }
+      // GPS heading fallback: coords.heading gives direction of travel (when moving > ~3 km/h)
+      if (pos.coords.heading != null && !isNaN(pos.coords.heading) && pos.coords.speed > 0.8) {
+        setHeading(pos.coords.heading, 'gps');
+      }
+      updateCompass();
+    };
+    // Try high accuracy first (GPS satellites), fall back to low accuracy (WiFi/cell tower)
     state.geoWatchId = navigator.geolocation.watchPosition(
-      (pos) => {
-        state.myPos = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-        // Send position to partner
-        if (state.conn && state.conn.open) {
-          try { state.conn.send({ type: 'pos', lat: state.myPos.lat, lng: state.myPos.lng }); } catch(_) {}
+      geoSuccess,
+      (err) => {
+        console.warn('[GPS] High accuracy failed:', err.message);
+        // Fall back to low accuracy (WiFi/cell tower position — works indoors)
+        if (state.geoWatchId != null) {
+          navigator.geolocation.clearWatch(state.geoWatchId);
         }
-        // GPS heading fallback: coords.heading gives direction of travel (when moving > ~3 km/h)
-        if (pos.coords.heading != null && !isNaN(pos.coords.heading) && pos.coords.speed > 0.8) {
-          setHeading(pos.coords.heading, 'gps');
-        }
-        updateCompass();
+        state.geoWatchId = navigator.geolocation.watchPosition(
+          geoSuccess,
+          (err2) => { console.warn('[GPS] Low accuracy also failed:', err2.message); toast('⚠️ GPS nicht verfügbar'); },
+          { enableHighAccuracy: false, maximumAge: 30000, timeout: 15000 }
+        );
       },
-      (err) => { console.warn('[GPS]', err.message); toast('⚠️ GPS-Fehler: ' + err.message); },
-      { enableHighAccuracy: true, maximumAge: 3000, timeout: 8000 }
+      { enableHighAccuracy: true, maximumAge: 5000, timeout: 12000 }
     );
     // Periodic position ping every 5s — ensures partner gets our position even if
     // connection was established after first GPS fix
