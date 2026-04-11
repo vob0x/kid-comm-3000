@@ -1994,7 +1994,12 @@ function bindCall(call) {
 }
 
 function bindDataConn(dc) {
-  dc.on('open', () => {});
+  dc.on('open', () => {
+    // Send own position immediately so partner compass works right away
+    if (state.myPos) {
+      try { dc.send({ type: 'pos', lat: state.myPos.lat, lng: state.myPos.lng }); } catch(_) {}
+    }
+  });
   dc.on('data', (msg) => {
     try {
       const obj = (typeof msg === 'string') ? JSON.parse(msg) : msg;
@@ -2314,6 +2319,13 @@ function startCompass() {
       (err) => console.warn('[GPS]', err.message),
       { enableHighAccuracy: true, maximumAge: 3000, timeout: 8000 }
     );
+    // Periodic position ping every 5s — ensures partner gets our position even if
+    // connection was established after first GPS fix
+    state._posInterval = setInterval(() => {
+      if (state.myPos && state.conn && state.conn.open) {
+        try { state.conn.send({ type: 'pos', lat: state.myPos.lat, lng: state.myPos.lng }); } catch(_) {}
+      }
+    }, 5000);
   }
 
   // ---- Device orientation (compass heading) ----
@@ -2435,6 +2447,10 @@ function stopCompass() {
   if (state.geoWatchId != null) {
     navigator.geolocation.clearWatch(state.geoWatchId);
     state.geoWatchId = null;
+  }
+  if (state._posInterval) {
+    clearInterval(state._posInterval);
+    state._posInterval = null;
   }
   if (state._compassSensor) {
     try { state._compassSensor.stop(); } catch(_) {}
