@@ -527,12 +527,12 @@ body[data-conn="off"] .conn-label::after { content: 'OFFLINE'; }
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
+  justify-content: space-evenly;
   pointer-events: none;
   z-index: 2;
-  gap: 0;
+  padding: 8px 0 22px;
 }
-/* Channel number — big, tight above compass */
+/* Channel number — big, centered in upper half */
 .ch-big {
   font-family: 'Orbitron', monospace;
   font-size: clamp(48px, 14vw, 80px);
@@ -541,7 +541,6 @@ body[data-conn="off"] .conn-label::after { content: 'OFFLINE'; }
   text-shadow: 0 0 20px var(--primary-glow), 0 0 40px var(--primary-glow), 0 0 4px #fff;
   letter-spacing: 4px;
   line-height: 1;
-  margin-bottom: -4px;
 }
 .ch-small {
   font-family: 'Share Tech Mono', monospace;
@@ -559,6 +558,7 @@ body[data-conn="off"] .conn-label::after { content: 'OFFLINE'; }
   height: clamp(110px, 32vw, 150px);
   margin: 0;
   flex-shrink: 0;
+  transition: transform 0.3s ease;
 }
 .compass-bezel {
   position: absolute;
@@ -567,6 +567,7 @@ body[data-conn="off"] .conn-label::after { content: 'OFFLINE'; }
   border: 2px solid var(--surface-border);
   box-shadow: 0 0 14px var(--primary-glow), inset 0 0 10px rgba(0,0,0,0.5);
   pointer-events: none;
+  transition: border-color 0.5s, box-shadow 0.5s;
 }
 .compass-dial {
   position: absolute;
@@ -583,7 +584,7 @@ body[data-conn="off"] .conn-label::after { content: 'OFFLINE'; }
 .compass-partner {
   position: absolute;
   inset: 0;
-  transition: transform 0.2s ease-out;
+  transition: transform 0.2s ease-out, opacity 0.3s;
   opacity: 0;
   pointer-events: none;
   filter: drop-shadow(0 0 8px var(--primary-glow));
@@ -603,15 +604,100 @@ body[data-conn="off"] .conn-label::after { content: 'OFFLINE'; }
   background: var(--primary);
   box-shadow: 0 0 8px var(--primary-glow);
   z-index: 5;
+  transition: width 0.4s, height 0.4s, margin 0.4s, background 0.4s, box-shadow 0.4s;
 }
+/* Radar ping — concentric ring expanding from center */
+.compass-ping {
+  position: absolute;
+  top: 50%; left: 50%;
+  width: 0; height: 0;
+  margin: 0;
+  border-radius: 50%;
+  border: 2px solid var(--primary);
+  opacity: 0;
+  pointer-events: none;
+  z-index: 4;
+}
+
+/* --- Proximity levels (hot/cold treasure hunt) --- */
+
+/* FAR (>500m): normal theme glow, slow pulse */
 .compass.has-partner .compass-bezel {
   border-color: var(--primary);
-  animation: compassPulse 2.5s ease-in-out infinite;
+  animation: compassPulseFar 3s ease-in-out infinite;
 }
-@keyframes compassPulse {
-  0%, 100% { box-shadow: 0 0 12px var(--primary-glow), inset 0 0 8px rgba(0,0,0,0.5); }
-  50%      { box-shadow: 0 0 26px var(--primary-glow), inset 0 0 14px rgba(0,0,0,0.4); }
+@keyframes compassPulseFar {
+  0%, 100% { box-shadow: 0 0 10px var(--primary-glow), inset 0 0 6px rgba(0,0,0,0.5); }
+  50%      { box-shadow: 0 0 20px var(--primary-glow), inset 0 0 10px rgba(0,0,0,0.4); }
 }
+
+/* MEDIUM (100m–500m): yellow/warm glow, medium pulse */
+.compass.prox-medium .compass-bezel {
+  border-color: #ffcc00 !important;
+  animation: compassPulseMedium 2s ease-in-out infinite !important;
+}
+.compass.prox-medium .compass-hub {
+  background: #ffcc00;
+  box-shadow: 0 0 12px rgba(255, 204, 0, 0.8);
+}
+.compass.prox-medium .compass-dist { color: #ffcc00; text-shadow: 0 0 8px rgba(255, 204, 0, 0.7); }
+@keyframes compassPulseMedium {
+  0%, 100% { box-shadow: 0 0 14px rgba(255, 204, 0, 0.5), inset 0 0 8px rgba(0,0,0,0.4); }
+  50%      { box-shadow: 0 0 30px rgba(255, 204, 0, 0.7), inset 0 0 14px rgba(0,0,0,0.3); }
+}
+
+/* CLOSE (30m–100m): orange glow, faster pulse, hub grows */
+.compass.prox-close .compass-bezel {
+  border-color: #ff8800 !important;
+  border-width: 3px;
+  animation: compassPulseClose 1.3s ease-in-out infinite !important;
+}
+.compass.prox-close .compass-hub {
+  width: 14px; height: 14px; margin: -7px 0 0 -7px;
+  background: #ff8800;
+  box-shadow: 0 0 16px rgba(255, 136, 0, 0.9);
+}
+.compass.prox-close .compass-dist { color: #ff8800; text-shadow: 0 0 10px rgba(255, 136, 0, 0.7); }
+.compass.prox-close .compass-ping {
+  animation: radarPing 1.3s ease-out infinite;
+}
+@keyframes compassPulseClose {
+  0%, 100% { box-shadow: 0 0 16px rgba(255, 136, 0, 0.6), inset 0 0 10px rgba(0,0,0,0.4); }
+  50%      { box-shadow: 0 0 36px rgba(255, 136, 0, 0.8), 0 0 12px rgba(255, 136, 0, 0.4), inset 0 0 16px rgba(0,0,0,0.3); }
+}
+
+/* VERY CLOSE (<30m): bright green glow, rapid pulse, big hub, strong ping */
+.compass.prox-hot .compass-bezel {
+  border-color: #00ff66 !important;
+  border-width: 3px;
+  animation: compassPulseHot 0.7s ease-in-out infinite !important;
+}
+.compass.prox-hot .compass-hub {
+  width: 18px; height: 18px; margin: -9px 0 0 -9px;
+  background: #00ff66;
+  box-shadow: 0 0 22px rgba(0, 255, 102, 1);
+  animation: hubGlow 0.7s ease-in-out infinite;
+}
+.compass.prox-hot .compass-dist { color: #00ff66; text-shadow: 0 0 12px rgba(0, 255, 102, 0.8); font-weight: 700; }
+.compass.prox-hot .compass-ping {
+  animation: radarPing 0.8s ease-out infinite;
+  border-color: #00ff66;
+}
+.compass.prox-hot { transform: scale(1.06); }
+@keyframes compassPulseHot {
+  0%, 100% { box-shadow: 0 0 20px rgba(0, 255, 102, 0.7), inset 0 0 12px rgba(0,0,0,0.3); }
+  50%      { box-shadow: 0 0 50px rgba(0, 255, 102, 1), 0 0 20px rgba(0, 255, 102, 0.6), inset 0 0 20px rgba(0,0,0,0.2); }
+}
+@keyframes hubGlow {
+  0%, 100% { transform: scale(1); }
+  50%      { transform: scale(1.3); }
+}
+/* Radar ping ring animation */
+@keyframes radarPing {
+  0%   { width: 10px; height: 10px; margin: -5px 0 0 -5px; opacity: 0.8; }
+  100% { width: 100px; height: 100px; margin: -50px 0 0 -50px; opacity: 0; }
+}
+
 /* Distance readout — below compass */
 .compass-dist {
   position: absolute;
@@ -625,7 +711,7 @@ body[data-conn="off"] .conn-label::after { content: 'OFFLINE'; }
   text-shadow: 0 0 8px var(--primary-glow);
   white-space: nowrap;
   opacity: 0;
-  transition: opacity 0.3s;
+  transition: opacity 0.3s, color 0.5s;
 }
 .compass.has-partner .compass-dist { opacity: 1; }
 
@@ -1135,6 +1221,8 @@ body[data-state="on"] .power-btn {
         </div>
         <!-- Center hub -->
         <div class="compass-hub"></div>
+        <!-- Radar ping ring -->
+        <div class="compass-ping"></div>
         <!-- Distance readout -->
         <div class="compass-dist" id="compassDist"></div>
       </div>
@@ -2296,6 +2384,14 @@ function shortestRotation(current, target) {
   return current + delta;
 }
 
+const PROX_CLASSES = ['prox-hot', 'prox-close', 'prox-medium'];
+
+function setProximity(level) {
+  // level: 'hot' | 'close' | 'medium' | 'far' | null
+  PROX_CLASSES.forEach(c => els.compass.classList.remove(c));
+  if (level && level !== 'far') els.compass.classList.add('prox-' + level);
+}
+
 function updateCompass() {
   const heading = state.heading != null ? state.heading : 0;
 
@@ -2304,32 +2400,32 @@ function updateCompass() {
   _dialRot = shortestRotation(_dialRot, dialTarget);
   els.compassDial.style.transform = 'rotate(' + _dialRot + 'deg)';
 
-  // 2) If partner position is known, show the partner arrow
+  // 2) If partner position is known, show the partner arrow + proximity effect
   const hasPartner = state.myPos && state.partnerPos;
   if (hasPartner) {
+    els.compass.classList.add('has-partner');
     const bearing = bearingTo(state.myPos.lat, state.myPos.lng,
                               state.partnerPos.lat, state.partnerPos.lng);
     const dist = distanceTo(state.myPos.lat, state.myPos.lng,
                             state.partnerPos.lat, state.partnerPos.lng);
-    // When very close (<100m), GPS accuracy makes bearing unreliable
-    if (dist < 100) {
-      els.compass.classList.add('has-partner');
-      els.compass.classList.add('nearby');
-      els.compassPartner.style.transform = 'rotate(0deg)';
-      els.compassPartner.style.opacity = '0.3';
-      els.compassDist.textContent = '📍 Nah! ~' + Math.round(dist) + 'm';
-    } else {
-      els.compass.classList.add('has-partner');
-      els.compass.classList.remove('nearby');
-      els.compassPartner.style.opacity = '';
-      const partnerTarget = bearing - heading;
-      _partnerRot = shortestRotation(_partnerRot, partnerTarget);
-      els.compassPartner.style.transform = 'rotate(' + _partnerRot + 'deg)';
-      els.compassDist.textContent = formatDist(dist);
-    }
+
+    // Partner arrow — always show direction, but fade when very close (unreliable)
+    const partnerTarget = bearing - heading;
+    _partnerRot = shortestRotation(_partnerRot, partnerTarget);
+    els.compassPartner.style.transform = 'rotate(' + _partnerRot + 'deg)';
+    els.compassPartner.style.opacity = dist < 50 ? '0.3' : '';
+
+    // Distance readout
+    els.compassDist.textContent = formatDist(dist);
+
+    // Proximity level — visual "hot/cold" treasure hunt effect
+    if (dist < 30)       setProximity('hot');     // 🟢 bright green, rapid pulse, scale up
+    else if (dist < 100) setProximity('close');   // 🟠 orange, fast pulse, radar ping
+    else if (dist < 500) setProximity('medium');  // 🟡 yellow, medium pulse
+    else                 setProximity('far');     // normal theme color, slow pulse
   } else {
     els.compass.classList.remove('has-partner');
-    els.compass.classList.remove('nearby');
+    setProximity(null);
     els.compassDist.textContent = '';
   }
 }
@@ -2519,6 +2615,7 @@ function stopCompass() {
   state.partnerPos = null;
   state.heading = null;
   els.compass.classList.remove('has-partner');
+  setProximity(null);
   els.compassDial.style.transform = 'rotate(0deg)';
   els.compassPartner.style.transform = 'rotate(0deg)';
   els.compassDist.textContent = '';
