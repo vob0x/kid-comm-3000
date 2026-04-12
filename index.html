@@ -2135,6 +2135,14 @@ function bindCall(call) {
     els.sigTag.textContent = 'SIG: ████';
     playSquelchOpen();
     toast('Verbunden!');
+    // Reset teardown counter after stable connection (30s without drop)
+    clearTimeout(state._stabilityTimer);
+    state._stabilityTimer = setTimeout(() => {
+      if (state.connected) {
+        _teardownCount = 0;
+        console.log('[Reconnect] Connection stable for 30s — teardown counter reset');
+      }
+    }, 30000);
     // Immediately share our position so the compass activates on both sides
     if (state.myPos && state.conn && state.conn.open) {
       try { state.conn.send({ type: 'pos', lat: state.myPos.lat, lng: state.myPos.lng }); } catch(_) {}
@@ -2173,14 +2181,15 @@ function bindCall(call) {
       } else if (pc.iceConnectionState === 'disconnected') {
         els.sigTag.textContent = 'SIG: ░░░░';
         toast('Signal unterbrochen…');
-        // Give ICE 8s to self-recover; if not, force reconnect
+        // Give ICE 15s to self-recover (mobile networks need more time).
+        // If not recovered, force reconnect.
         clearTimeout(pc._disconnectTimer);
         pc._disconnectTimer = setTimeout(() => {
           if (pc.iceConnectionState === 'disconnected') {
-            console.log('[ICE] Stuck in disconnected for 8s — forcing reconnect');
+            console.log('[ICE] Stuck in disconnected for 15s — forcing reconnect');
             teardownAndReconnect();
           }
-        }, 8000);
+        }, 15000);
       } else if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed') {
         clearTimeout(pc._disconnectTimer);
         els.sigTag.textContent = 'SIG: ████';
@@ -2200,14 +2209,43 @@ function bindCall(call) {
 
 // ---- Full teardown + reconnect (safe, avoids partial state) ----
 let _isReconnecting = false;
+let _lastTeardownTime = 0;
+let _teardownCount = 0;
+
 function teardownAndReconnect() {
   if (_isReconnecting || !state.powered || !state.partnerId) return;
+
+  // Cooldown: prevent reconnect storms. If we've torn down 3+ times in 60s, back off hard.
+  const now = Date.now();
+  if (now - _lastTeardownTime < 10000) {
+    _teardownCount++;
+  } else {
+    _teardownCount = 1;
+  }
+  _lastTeardownTime = now;
+
+  if (_teardownCount > 3) {
+    const backoff = Math.min(_teardownCount * 5000, 30000);
+    console.log('[Reconnect] Too many teardowns (' + _teardownCount + ') — backing off', backoff, 'ms');
+    toast('Instabil – warte ' + Math.round(backoff / 1000) + 's…');
+    els.sigTag.textContent = 'SIG: ⏳';
+    setTimeout(() => {
+      _teardownCount = 0;
+      _isReconnecting = false;
+      if (!state.connected && state.powered && state.partnerId) {
+        teardownAndReconnect();
+      }
+    }, backoff);
+    return;
+  }
+
   _isReconnecting = true;
-  console.log('[Reconnect] Teardown started');
+  console.log('[Reconnect] Teardown #' + _teardownCount + ' started');
 
   // 1) Close everything cleanly
   stopHeartbeat();
   stopTransmit();
+  clearTimeout(_reconnectTimer);
   if (state.call) { try { state.call.close(); } catch(_) {} }
   if (state.conn) { try { state.conn.close(); } catch(_) {} }
   state.call = null;
@@ -2220,7 +2258,9 @@ function teardownAndReconnect() {
   //    The other side waits for the incoming call. This prevents both sides
   //    from calling each other simultaneously (race condition).
   const iAmCaller = state.myId < state.partnerId;
-  const delay = iAmCaller ? 2000 : 1000; // caller waits a bit longer so receiver is ready
+  // Delay increases with teardown count to let things settle
+  const baseDelay = iAmCaller ? 3000 : 1500;
+  const delay = baseDelay + (_teardownCount * 1000);
 
   toast(iAmCaller ? 'Verbinde neu…' : 'Warte auf Partner…');
   els.sigTag.textContent = 'SIG: ░░░░';
@@ -2229,15 +2269,15 @@ function teardownAndReconnect() {
     _isReconnecting = false;
     if (!state.powered || state.connected) return;
     if (iAmCaller) {
-      scheduleReconnect(0); // connect immediately
+      scheduleReconnect(0);
     } else {
-      // Receiver: if no incoming call arrives within 12s, try connecting ourselves
+      // Receiver: if no incoming call arrives within 15s, try connecting ourselves
       setTimeout(() => {
         if (!state.connected && state.powered && state.partnerId) {
-          console.log('[Reconnect] No incoming call after 12s — trying as caller');
+          console.log('[Reconnect] No incoming call after 15s — trying as caller');
           scheduleReconnect(0);
         }
-      }, 12000);
+      }, 15000);
     }
   }, delay);
 }
@@ -2287,9 +2327,9 @@ function startHeartbeat() {
     if (!state.conn || !state.conn.open) { stopHeartbeat(); return; }
     // Send ping
     try { state.conn.send({ type: 'ping' }); } catch(_) {}
-    // Check if we got a pong recently (within 20s)
-    if (Date.now() - _lastPong > 20000 && state.connected) {
-      console.log('[Heartbeat] No pong for 20s — connection dead');
+    // Check if we got a pong recently (within 35s — generous for mobile)
+    if (Date.now() - _lastPong > 35000 && state.connected) {
+      console.log('[Heartbeat] No pong for 35s — connection dead');
       toast('Verbindung tot – verbinde neu…');
       stopHeartbeat();
       if (state.call) { try { state.call.close(); } catch(_) {} }
@@ -2360,6 +2400,12 @@ function waitForPeerOpen(timeoutMs = 6000) {
 async function connectToPeer(otherId) {
   if (!otherId) { toast('Ungültiger Code'); return; }
   if (otherId === state.myId) { toast('Das ist dein eigener Code'); return; }
+
+  // Clean up any leftover connections from previous attempts
+  stopHeartbeat();
+  if (state.call) { try { state.call.close(); } catch(_) {} state.call = null; }
+  if (state.conn) { try { state.conn.close(); } catch(_) {} state.conn = null; }
+  state.connected = false;
 
   setConn('connecting');
   toast('Verbinde…');
@@ -2880,8 +2926,17 @@ async function powerOn() {
     s.getTracks().forEach(t => t.stop()); // only for permission prompt
   } catch(e) { toast('Mikrofon nötig!'); }
 
-  // Fetch fresh TURN credentials (non-blocking — if it takes too long
-  // we still start with STUN-only, TURN arrives before first call in most cases)
+  playStartupSequence();
+  state.powered = true;
+  applyMode(false);
+  setupViz();
+  startCompass();
+  state._clockInterval = setInterval(updateClock, 1000);
+  updateClock();
+
+  // Fetch TURN credentials FIRST, then init peer.
+  // This ensures TURN is available for the very first call (critical for WiFi↔Mobilfunk).
+  toast('TURN-Server laden…');
   fetchTurnServers().then((turnServers) => {
     ICE_SERVERS = [...BASE_ICE, ...turnServers];
     console.log('[ICE] Total servers:', ICE_SERVERS.length,
@@ -2891,16 +2946,13 @@ async function powerOn() {
     } else if (turnServers.length > 0) {
       toast('TURN bereit · Mobilfunk OK');
     }
+    // NOW init peer — TURN is guaranteed ready before any call happens
+    initPeer();
+  }).catch(() => {
+    // Even if TURN fails, still init peer with STUN-only
+    toast('TURN-Fehler – nur WLAN');
+    initPeer();
   });
-
-  playStartupSequence();
-  state.powered = true;
-  applyMode(false);
-  initPeer();
-  setupViz();
-  startCompass();
-  state._clockInterval = setInterval(updateClock, 1000);
-  updateClock();
 
   // Network recovery — auto-reconnect when WiFi comes back (e.g. devolo switch)
   window.addEventListener('online', onNetworkBack);
