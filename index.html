@@ -2055,33 +2055,15 @@ function setupViz() {
 const METERED_APP  = 'kidcomm3000';
 const METERED_KEY  = 'JLsb9nLcHtJN6AxIk_L2Ds2bdXUIMpDUjrAwyzOdS2AwIQCF';
 
-// Fallback STUN + Open Relay TURN (always available, no API key needed).
-// Open Relay Project by Metered — free TURN with public credentials.
+// Fallback STUN servers (always work for same-network P2P).
+// TURN from Metered API is fetched dynamically on power-on.
 const BASE_ICE = [
   { urls: 'stun:stun.l.google.com:19302' },
   { urls: 'stun:stun1.l.google.com:19302' },
-  { urls: 'stun:openrelay.metered.ca:80' },
-  // Open Relay TURN — works immediately, no API call needed
-  {
-    urls: 'turn:openrelay.metered.ca:80',
-    username: 'openrelayproject',
-    credential: 'openrelayproject',
-  },
-  {
-    urls: 'turn:openrelay.metered.ca:443',
-    username: 'openrelayproject',
-    credential: 'openrelayproject',
-  },
-  {
-    urls: 'turn:openrelay.metered.ca:443?transport=tcp',
-    username: 'openrelayproject',
-    credential: 'openrelayproject',
-  },
-  {
-    urls: 'turns:openrelay.metered.ca:443?transport=tcp',
-    username: 'openrelayproject',
-    credential: 'openrelayproject',
-  },
+  { urls: 'stun:stun2.l.google.com:19302' },
+  { urls: 'stun:stun3.l.google.com:19302' },
+  { urls: 'stun:stun4.l.google.com:19302' },
+  { urls: 'stun:stun.cloudflare.com:3478' },
 ];
 
 // Holt frische TURN-Credentials von Metered. Gibt iceServers-Array zurück
@@ -2091,18 +2073,28 @@ async function fetchTurnServers() {
     console.warn('[TURN] Kein Metered-API-Key → nur STUN (P2P). Für Mobilfunk/CGNAT: metered.ca/signup');
     return [];
   }
-  try {
-    const url = 'https://' + METERED_APP + '.metered.live/api/v1/turn/credentials?apiKey=' + METERED_KEY;
-    const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    const servers = await res.json();
-    console.log('[TURN] Got', servers.length, 'TURN servers from Metered');
-    return servers;  // already in iceServers format [{urls, username, credential}, ...]
-  } catch (e) {
-    console.error('[TURN] Metered fetch failed:', e);
-    toast('TURN-Server nicht erreichbar – nur WLAN-Betrieb');
-    return [];
+  // Try two different URL patterns (Metered has changed their API URL format over time)
+  const urls = [
+    'https://' + METERED_APP + '.metered.live/api/v1/turn/credentials?apiKey=' + METERED_KEY,
+    'https://global.metered.live/api/v1/turn/credentials?apiKey=' + METERED_KEY,
+  ];
+  for (const url of urls) {
+    try {
+      console.log('[TURN] Trying:', url.substring(0, 60) + '…');
+      const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
+      if (!res.ok) { console.warn('[TURN] HTTP', res.status, 'from', url); continue; }
+      const servers = await res.json();
+      if (Array.isArray(servers) && servers.length > 0) {
+        console.log('[TURN] Got', servers.length, 'TURN servers');
+        return servers;
+      }
+    } catch (e) {
+      console.warn('[TURN] Fetch failed:', url.split('?')[0], e.name || '', e.message || '');
+    }
   }
+  console.error('[TURN] All TURN endpoints failed — using STUN only');
+  toast('TURN nicht erreichbar – VPN aus?');
+  return [];
 }
 
 let ICE_SERVERS = [...BASE_ICE]; // will be enriched with TURN on power-on
@@ -2251,6 +2243,12 @@ function bindCall(call) {
     }
   });
   call.on('close', () => {
+    // CRITICAL: If state.call has been replaced (e.g. by an incoming call),
+    // this is the OLD call closing — do NOT teardown the new connection!
+    if (state.call && state.call !== call) {
+      console.log('[Call] Old call closed (replaced by new) — ignoring');
+      return;
+    }
     const wasConnected = state.connected;
     playSquelchClose();
     // Auto-reconnect if the connection dropped unexpectedly (not user power-off)
@@ -2274,9 +2272,9 @@ function bindCall(call) {
   if (pc) {
     pc.addEventListener('iceconnectionstatechange', () => {
       console.log('[ICE]', pc.iceConnectionState);
+      // Ignore ICE events from replaced calls
+      if (state.call && state.call !== call) return;
       if (pc.iceConnectionState === 'failed') {
-        // ICE failed — don't bother with restartIce() (broken with PeerJS).
-        // Go straight to full teardown + reconnect.
         console.log('[ICE] Failed — full reconnect');
         toast('Verbindung verloren – verbinde neu…');
         teardownAndReconnect();
