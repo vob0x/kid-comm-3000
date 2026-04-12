@@ -1981,8 +1981,8 @@ function setupViz() {
 // 1) Gratis-Account auf https://www.metered.ca/signup anlegen.
 // 2) Im Dashboard → "TURN Server" → App-Name + API-Key kopieren.
 // 3) Hier eintragen:
-const METERED_APP  = '';   // z.B. 'kidcomm-abcd1234'
-const METERED_KEY  = '';   // z.B. 'a1b2c3d4e5f6g7h8i9j0...'
+const METERED_APP  = 'kidcomm3000';
+const METERED_KEY  = 'JLsb9nLcHtJN6AxIk_L2Ds2bdXUIMpDUjrAwyzOdS2AwIQCF';
 
 // Fallback-STUN (immer aktiv, auch ohne Metered-Account).
 const BASE_ICE = [
@@ -2128,6 +2128,8 @@ function bindCall(call) {
     state.remoteStream = remoteStream;
     processRemoteStream(remoteStream);
     state.connected = true;
+    _isReconnecting = false;
+    _reconnectAttempt = 0;
     setConn('connected');
     setTalk('on');
     els.sigTag.textContent = 'SIG: ████';
@@ -2140,18 +2142,18 @@ function bindCall(call) {
   });
   call.on('close', () => {
     const wasConnected = state.connected;
-    state.connected = false;
-    state.call = null;
-    setConn('ready');
-    setTalk('off');
-    stopTransmit();
-    els.sigTag.textContent = 'SIG: READY';
     playSquelchClose();
     // Auto-reconnect if the connection dropped unexpectedly (not user power-off)
     if (wasConnected && state.powered && state.partnerId) {
-      toast('Getrennt – verbinde neu…');
-      scheduleReconnect(3000);
+      teardownAndReconnect();
     } else {
+      state.connected = false;
+      state.call = null;
+      setConn('ready');
+      setTalk('off');
+      stopTransmit();
+      stopHeartbeat();
+      els.sigTag.textContent = 'SIG: READY';
       toast('Getrennt');
     }
   });
@@ -2160,47 +2162,27 @@ function bindCall(call) {
   // ICE / connection diagnostics + auto-recovery on network change
   const pc = call.peerConnection;
   if (pc) {
-    let iceRestartAttempted = false;
     pc.addEventListener('iceconnectionstatechange', () => {
       console.log('[ICE]', pc.iceConnectionState);
       if (pc.iceConnectionState === 'failed') {
-        // Try ICE restart first (works when both peers are still online)
-        if (!iceRestartAttempted && pc.restartIce) {
-          iceRestartAttempted = true;
-          console.log('[ICE] Attempting ICE restart...');
-          toast('Netzwerkwechsel – verbinde neu…');
-          els.sigTag.textContent = 'SIG: ░░░░';
-          try { pc.restartIce(); } catch(_) {}
-          // If still failed after 8s, close and full reconnect
-          setTimeout(() => {
-            if (pc.iceConnectionState === 'failed' || pc.iceConnectionState === 'disconnected') {
-              console.log('[ICE] Restart failed, full reconnect');
-              try { call.close(); } catch(_) {}
-            }
-          }, 8000);
-        } else {
-          toast('Verbindung verloren');
-          setConn('ready');
-          try { call.close(); } catch(_) {}
-        }
+        // ICE failed — don't bother with restartIce() (broken with PeerJS).
+        // Go straight to full teardown + reconnect.
+        console.log('[ICE] Failed — full reconnect');
+        toast('Verbindung verloren – verbinde neu…');
+        teardownAndReconnect();
       } else if (pc.iceConnectionState === 'disconnected') {
         els.sigTag.textContent = 'SIG: ░░░░';
         toast('Signal unterbrochen…');
-        // ICE disconnected often recovers on its own within a few seconds;
-        // if not, it transitions to 'failed' and we handle it above.
-        // BUT on Devolo WiFi switches, it can stay stuck in 'disconnected' forever.
-        // Force close after 12s if it hasn't recovered.
+        // Give ICE 8s to self-recover; if not, force reconnect
         clearTimeout(pc._disconnectTimer);
         pc._disconnectTimer = setTimeout(() => {
           if (pc.iceConnectionState === 'disconnected') {
-            console.log('[ICE] Stuck in disconnected for 12s — forcing reconnect');
-            toast('Verbindung hängt – verbinde neu…');
-            try { call.close(); } catch(_) {}
+            console.log('[ICE] Stuck in disconnected for 8s — forcing reconnect');
+            teardownAndReconnect();
           }
-        }, 12000);
+        }, 8000);
       } else if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed') {
-        iceRestartAttempted = false; // reset for next time
-        clearTimeout(pc._disconnectTimer); // cancel any pending disconnect timer
+        clearTimeout(pc._disconnectTimer);
         els.sigTag.textContent = 'SIG: ████';
         if (pc.getStats) pc.getStats(null).then((stats) => {
           stats.forEach((r) => {
@@ -2216,15 +2198,63 @@ function bindCall(call) {
   }
 }
 
+// ---- Full teardown + reconnect (safe, avoids partial state) ----
+let _isReconnecting = false;
+function teardownAndReconnect() {
+  if (_isReconnecting || !state.powered || !state.partnerId) return;
+  _isReconnecting = true;
+  console.log('[Reconnect] Teardown started');
+
+  // 1) Close everything cleanly
+  stopHeartbeat();
+  stopTransmit();
+  if (state.call) { try { state.call.close(); } catch(_) {} }
+  if (state.conn) { try { state.conn.close(); } catch(_) {} }
+  state.call = null;
+  state.conn = null;
+  state.connected = false;
+  setConn('ready');
+  setTalk('off');
+
+  // 2) Decide who initiates: only the peer with the "lower" ID calls.
+  //    The other side waits for the incoming call. This prevents both sides
+  //    from calling each other simultaneously (race condition).
+  const iAmCaller = state.myId < state.partnerId;
+  const delay = iAmCaller ? 2000 : 1000; // caller waits a bit longer so receiver is ready
+
+  toast(iAmCaller ? 'Verbinde neu…' : 'Warte auf Partner…');
+  els.sigTag.textContent = 'SIG: ░░░░';
+
+  setTimeout(() => {
+    _isReconnecting = false;
+    if (!state.powered || state.connected) return;
+    if (iAmCaller) {
+      scheduleReconnect(0); // connect immediately
+    } else {
+      // Receiver: if no incoming call arrives within 12s, try connecting ourselves
+      setTimeout(() => {
+        if (!state.connected && state.powered && state.partnerId) {
+          console.log('[Reconnect] No incoming call after 12s — trying as caller');
+          scheduleReconnect(0);
+        }
+      }, 12000);
+    }
+  }, delay);
+}
+
 // ---- Auto-reconnect scheduler ----
 let _reconnectTimer = null;
+let _reconnectAttempt = 0;
 function scheduleReconnect(delayMs) {
   clearTimeout(_reconnectTimer);
   _reconnectTimer = setTimeout(() => {
-    if (!state.powered || state.connected) return;
+    if (!state.powered || state.connected) { _reconnectAttempt = 0; return; }
     if (!state.partnerId) return;
+    _reconnectAttempt++;
+    console.log('[Reconnect] Attempt', _reconnectAttempt);
+
+    // Ensure broker is alive
     if (!state.peer || state.peer.disconnected || state.peer.destroyed) {
-      // PeerJS broker gone — reinit peer, then connect
       initPeer();
       setTimeout(() => {
         if (state.partnerId && !state.connected) connectToPeer(state.partnerId);
@@ -2232,6 +2262,17 @@ function scheduleReconnect(delayMs) {
     } else {
       connectToPeer(state.partnerId);
     }
+
+    // If this attempt doesn't work, try again with backoff (max 15s)
+    const nextDelay = Math.min(3000 * _reconnectAttempt, 15000);
+    setTimeout(() => {
+      if (!state.connected && state.powered && state.partnerId) {
+        console.log('[Reconnect] Attempt', _reconnectAttempt, 'seems stale — retrying in', nextDelay, 'ms');
+        scheduleReconnect(nextDelay);
+      } else {
+        _reconnectAttempt = 0;
+      }
+    }, 10000);
   }, delayMs);
 }
 
@@ -2874,15 +2915,13 @@ function onNetworkChange() {
   if (!state.powered) return;
   console.log('[NET] Network change detected (type:', navigator.connection?.type,
     'downlink:', navigator.connection?.downlink, ')');
-  // If connected, the ICE layer should handle it. But if it doesn't notice within 5s, nudge it.
+  // If connected, check if ICE is still healthy after network change. If not, full reconnect.
   if (state.connected && state.call && state.call.peerConnection) {
     const pc = state.call.peerConnection;
     setTimeout(() => {
       if (pc.iceConnectionState === 'disconnected' || pc.iceConnectionState === 'failed') {
-        console.log('[NET] ICE unhealthy after network change — forcing restart');
-        if (pc.restartIce) {
-          try { pc.restartIce(); } catch(_) {}
-        }
+        console.log('[NET] ICE unhealthy after network change — full reconnect');
+        teardownAndReconnect();
       }
     }, 5000);
   }
