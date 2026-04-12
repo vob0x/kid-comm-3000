@@ -2627,6 +2627,8 @@ function startCompass() {
     if (priority[source] < priority[headingSource]) return;
     headingSource = source;
     state.heading = ((deg % 360) + 360) % 360;
+    // Show heading source + value in SIG tag for diagnostics
+    if (els.sigTag) els.sigTag.textContent = headingSource.toUpperCase() + ' ' + Math.round(state.heading) + '°';
     updateCompass();
   }
 
