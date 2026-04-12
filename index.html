@@ -2098,10 +2098,28 @@ function initPeer(forceFreshId = false) {
     toast('Fehler: ' + err.type);
   });
   state.peer.on('disconnected', () => {
+    console.log('[Peer] Broker disconnected');
     setConn('ready');
     // PeerJS lost the broker connection — try to bring it back so the
     // saved partner can still call us.
     try { state.peer.reconnect(); } catch(_) {}
+    // If reconnect doesn't work within 5s, try harder
+    setTimeout(() => {
+      if (state.powered && state.peer && state.peer.disconnected) {
+        console.log('[Peer] Broker still disconnected after 5s — re-reconnect');
+        try { state.peer.reconnect(); } catch(_) {}
+      }
+      // If still disconnected after another 10s, full reinit
+      setTimeout(() => {
+        if (state.powered && state.peer && (state.peer.disconnected || state.peer.destroyed)) {
+          console.log('[Peer] Broker dead — full reinit');
+          initPeer();
+          if (state.partnerId && !state.connected) {
+            setTimeout(() => scheduleReconnect(1000), 2000);
+          }
+        }
+      }, 10000);
+    }, 5000);
   });
 }
 
@@ -2170,8 +2188,19 @@ function bindCall(call) {
         toast('Signal unterbrochen…');
         // ICE disconnected often recovers on its own within a few seconds;
         // if not, it transitions to 'failed' and we handle it above.
+        // BUT on Devolo WiFi switches, it can stay stuck in 'disconnected' forever.
+        // Force close after 12s if it hasn't recovered.
+        clearTimeout(pc._disconnectTimer);
+        pc._disconnectTimer = setTimeout(() => {
+          if (pc.iceConnectionState === 'disconnected') {
+            console.log('[ICE] Stuck in disconnected for 12s — forcing reconnect');
+            toast('Verbindung hängt – verbinde neu…');
+            try { call.close(); } catch(_) {}
+          }
+        }, 12000);
       } else if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed') {
         iceRestartAttempted = false; // reset for next time
+        clearTimeout(pc._disconnectTimer); // cancel any pending disconnect timer
         els.sigTag.textContent = 'SIG: ████';
         if (pc.getStats) pc.getStats(null).then((stats) => {
           stats.forEach((r) => {
@@ -2206,16 +2235,52 @@ function scheduleReconnect(delayMs) {
   }, delayMs);
 }
 
+// ---- DataChannel heartbeat — detects dead connections even when ICE doesn't notice ----
+let _heartbeatInterval = null;
+let _lastPong = 0;
+
+function startHeartbeat() {
+  stopHeartbeat();
+  _lastPong = Date.now();
+  _heartbeatInterval = setInterval(() => {
+    if (!state.conn || !state.conn.open) { stopHeartbeat(); return; }
+    // Send ping
+    try { state.conn.send({ type: 'ping' }); } catch(_) {}
+    // Check if we got a pong recently (within 20s)
+    if (Date.now() - _lastPong > 20000 && state.connected) {
+      console.log('[Heartbeat] No pong for 20s — connection dead');
+      toast('Verbindung tot – verbinde neu…');
+      stopHeartbeat();
+      if (state.call) { try { state.call.close(); } catch(_) {} }
+    }
+  }, 8000); // ping every 8s
+}
+
+function stopHeartbeat() {
+  if (_heartbeatInterval) { clearInterval(_heartbeatInterval); _heartbeatInterval = null; }
+}
+
 function bindDataConn(dc) {
   dc.on('open', () => {
     // Send own position immediately so partner compass works right away
     if (state.myPos) {
       try { dc.send({ type: 'pos', lat: state.myPos.lat, lng: state.myPos.lng }); } catch(_) {}
     }
+    // Start heartbeat once DataChannel is open
+    startHeartbeat();
   });
   dc.on('data', (msg) => {
     try {
       const obj = (typeof msg === 'string') ? JSON.parse(msg) : msg;
+      // Heartbeat ping/pong
+      if (obj.type === 'ping') {
+        try { dc.send({ type: 'pong' }); } catch(_) {}
+        return;
+      }
+      if (obj.type === 'pong') {
+        _lastPong = Date.now();
+        return;
+      }
       if (obj.type === 'ring') {
         playModeBeep();
         toast('📢 RUF empfangen');
@@ -2234,7 +2299,7 @@ function bindDataConn(dc) {
       }
     } catch(e) { console.error(e); }
   });
-  dc.on('close', () => { state.conn = null; });
+  dc.on('close', () => { state.conn = null; stopHeartbeat(); });
 }
 
 function waitForPeerOpen(timeoutMs = 6000) {
@@ -2798,6 +2863,33 @@ async function powerOn() {
 
   // Network recovery — auto-reconnect when WiFi comes back (e.g. devolo switch)
   window.addEventListener('online', onNetworkBack);
+  // NetworkInformation API — detects WiFi access point changes WITHOUT going offline
+  // Critical for devolo powerline setups where the device seamlessly switches APs
+  if (navigator.connection) {
+    navigator.connection.addEventListener('change', onNetworkChange);
+  }
+}
+
+function onNetworkChange() {
+  if (!state.powered) return;
+  console.log('[NET] Network change detected (type:', navigator.connection?.type,
+    'downlink:', navigator.connection?.downlink, ')');
+  // If connected, the ICE layer should handle it. But if it doesn't notice within 5s, nudge it.
+  if (state.connected && state.call && state.call.peerConnection) {
+    const pc = state.call.peerConnection;
+    setTimeout(() => {
+      if (pc.iceConnectionState === 'disconnected' || pc.iceConnectionState === 'failed') {
+        console.log('[NET] ICE unhealthy after network change — forcing restart');
+        if (pc.restartIce) {
+          try { pc.restartIce(); } catch(_) {}
+        }
+      }
+    }, 5000);
+  }
+  // If broker is dead, reconnect it
+  if (state.peer && state.peer.disconnected) {
+    try { state.peer.reconnect(); } catch(_) {}
+  }
 }
 
 function onNetworkBack() {
@@ -2817,6 +2909,8 @@ function onNetworkBack() {
 function powerOff() {
   if (!state.powered) return;
   window.removeEventListener('online', onNetworkBack);
+  if (navigator.connection) navigator.connection.removeEventListener('change', onNetworkChange);
+  stopHeartbeat();
   clearTimeout(_reconnectTimer);
   // Stop clock + visualizer
   if (state._clockInterval) { clearInterval(state._clockInterval); state._clockInterval = null; }
