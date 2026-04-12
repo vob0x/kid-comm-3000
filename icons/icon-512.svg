@@ -5,15 +5,79 @@
       <stop offset="60%" stop-color="#040814"/>
       <stop offset="100%" stop-color="#000000"/>
     </radialGradient>
-    <linearGradient id="glow" x1="0%" y1="0%" x2="0%" y2="100%">
+    <linearGradient id="body" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#2a3a5c"/>
+      <stop offset="100%" stop-color="#0f1a2e"/>
+    </linearGradient>
+    <linearGradient id="glow" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0%" stop-color="#00e4ff"/>
       <stop offset="100%" stop-color="#7a3fff"/>
     </linearGradient>
+    <linearGradient id="screen" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#001a22"/>
+      <stop offset="100%" stop-color="#003040"/>
+    </linearGradient>
+    <linearGradient id="antenna" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#00e4ff"/>
+      <stop offset="50%" stop-color="#556688"/>
+      <stop offset="100%" stop-color="#334466"/>
+    </linearGradient>
+    <filter id="glowFilter">
+      <feGaussianBlur stdDeviation="6" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="softGlow">
+      <feGaussianBlur stdDeviation="12" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
   </defs>
+
+  <!-- Background -->
   <rect width="512" height="512" rx="110" ry="110" fill="url(#bg)"/>
-  <circle cx="256" cy="256" r="170" fill="none" stroke="url(#glow)" stroke-width="8" opacity="0.6"/>
-  <circle cx="256" cy="256" r="130" fill="none" stroke="url(#glow)" stroke-width="5" opacity="0.4"/>
-  <circle cx="256" cy="256" r="90" fill="none" stroke="url(#glow)" stroke-width="3" opacity="0.3"/>
-  <text x="256" y="330" font-size="220" text-anchor="middle" font-family="Helvetica, Arial, sans-serif">📻</text>
-  <text x="256" y="452" font-size="34" text-anchor="middle" fill="#00e4ff" font-family="Courier New, monospace" font-weight="bold" letter-spacing="6">KID·COMM</text>
+
+  <!-- Signal waves (behind walkie-talkie) -->
+  <g opacity="0.25" filter="url(#softGlow)">
+    <path d="M 340 140 Q 380 170 380 210" fill="none" stroke="#00e4ff" stroke-width="3" stroke-linecap="round"/>
+    <path d="M 355 120 Q 410 160 410 220" fill="none" stroke="#00e4ff" stroke-width="2.5" stroke-linecap="round"/>
+    <path d="M 370 100 Q 440 150 440 230" fill="none" stroke="#00e4ff" stroke-width="2" stroke-linecap="round"/>
+  </g>
+
+  <!-- Antenna -->
+  <rect x="195" y="52" width="10" height="110" rx="5" fill="url(#antenna)"/>
+  <circle cx="200" cy="52" r="8" fill="#00e4ff" filter="url(#glowFilter)" opacity="0.9"/>
+
+  <!-- Walkie-talkie body -->
+  <rect x="160" y="150" width="192" height="310" rx="24" ry="24" fill="url(#body)" stroke="#3a4f7a" stroke-width="2"/>
+
+  <!-- Body inner shadow/highlight -->
+  <rect x="166" y="156" width="180" height="298" rx="20" ry="20" fill="none" stroke="rgba(255,255,255,0.06)" stroke-width="1"/>
+
+  <!-- Screen area -->
+  <rect x="185" y="178" width="142" height="80" rx="10" ry="10" fill="url(#screen)" stroke="#00e4ff" stroke-width="1.5" opacity="0.9"/>
+
+  <!-- Screen content: channel number -->
+  <text x="256" y="238" font-size="48" text-anchor="middle" fill="#00e4ff" font-family="monospace" font-weight="bold" filter="url(#glowFilter)">CH 01</text>
+
+  <!-- Speaker grille -->
+  <g opacity="0.5">
+    <line x1="200" y1="284" x2="312" y2="284" stroke="#556688" stroke-width="1.5" stroke-linecap="round"/>
+    <line x1="200" y1="294" x2="312" y2="294" stroke="#556688" stroke-width="1.5" stroke-linecap="round"/>
+    <line x1="200" y1="304" x2="312" y2="304" stroke="#556688" stroke-width="1.5" stroke-linecap="round"/>
+    <line x1="200" y1="314" x2="312" y2="314" stroke="#556688" stroke-width="1.5" stroke-linecap="round"/>
+    <line x1="200" y1="324" x2="312" y2="324" stroke="#556688" stroke-width="1.5" stroke-linecap="round"/>
+    <line x1="200" y1="334" x2="312" y2="334" stroke="#556688" stroke-width="1.5" stroke-linecap="round"/>
+  </g>
+
+  <!-- Big talk button -->
+  <rect x="210" y="356" width="92" height="36" rx="8" fill="#ff3b30" stroke="#ff6b60" stroke-width="1"/>
+  <text x="256" y="381" font-size="16" text-anchor="middle" fill="#fff" font-family="Helvetica, Arial, sans-serif" font-weight="bold">TALK</text>
+
+  <!-- Side button (PTT indicator) -->
+  <rect x="148" y="220" width="14" height="50" rx="4" fill="#3a4f7a" stroke="#4a6090" stroke-width="1"/>
+
+  <!-- Bottom indicator LED -->
+  <circle cx="256" cy="430" r="6" fill="#00ff66" filter="url(#glowFilter)" opacity="0.8"/>
+
+  <!-- App name -->
+  <text x="256" y="492" font-size="28" text-anchor="middle" fill="#00e4ff" font-family="monospace" font-weight="bold" letter-spacing="4" opacity="0.85">KID·COMM</text>
 </svg>

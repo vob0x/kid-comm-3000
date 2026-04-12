@@ -2229,6 +2229,8 @@ function bindCall(call) {
     els.sigTag.textContent = 'SIG: ████';
     playSquelchOpen();
     toast('Verbunden!');
+    // Keep screen awake while connected (prevents lockscreen killing WebRTC)
+    requestWakeLock();
     // Reset teardown counter after stable connection (30s without drop)
     clearTimeout(state._stabilityTimer);
     state._stabilityTimer = setTimeout(() => {
@@ -3063,6 +3065,107 @@ async function powerOn() {
   }
 }
 
+// ============================================================
+//   BACKGROUND / LOCKSCREEN / APP-SWITCH SURVIVAL
+// ============================================================
+
+// Wake Lock — prevents screen from turning off while connected
+let _wakeLock = null;
+async function requestWakeLock() {
+  if (!('wakeLock' in navigator)) return;
+  try {
+    _wakeLock = await navigator.wakeLock.request('screen');
+    console.log('[WakeLock] Acquired');
+    _wakeLock.addEventListener('release', () => {
+      console.log('[WakeLock] Released');
+      // Re-acquire when page becomes visible again
+    });
+  } catch (e) {
+    console.warn('[WakeLock] Failed:', e.message);
+  }
+}
+function releaseWakeLock() {
+  if (_wakeLock) {
+    try { _wakeLock.release(); } catch(_) {}
+    _wakeLock = null;
+  }
+}
+
+// Visibility change — detect lockscreen, app switch, tab switch
+let _wentHiddenAt = 0;
+document.addEventListener('visibilitychange', () => {
+  if (!state.powered) return;
+
+  if (document.hidden) {
+    // Going to background / lockscreen
+    _wentHiddenAt = Date.now();
+    console.log('[Visibility] Hidden (lockscreen/background)');
+  } else {
+    // Coming back to foreground
+    const hiddenMs = Date.now() - _wentHiddenAt;
+    console.log('[Visibility] Visible again after', Math.round(hiddenMs / 1000), 's');
+
+    // 1) Resume AudioContext (browsers suspend it in background)
+    if (state.ctx && state.ctx.state === 'suspended') {
+      state.ctx.resume().then(() => console.log('[Audio] Context resumed'));
+    }
+
+    // 2) Re-acquire wake lock (it's released on visibility change)
+    if (state.connected || state.partnerId) requestWakeLock();
+
+    // 3) Check if connection survived
+    if (state.connected && state.call && state.call.peerConnection) {
+      const pc = state.call.peerConnection;
+      const iceState = pc.iceConnectionState;
+      console.log('[Visibility] ICE state after resume:', iceState);
+
+      if (iceState === 'failed' || iceState === 'closed') {
+        // Connection died during sleep — reconnect
+        console.log('[Visibility] Connection dead after sleep — reconnecting');
+        toast('Verbindung verloren (Ruhemodus) – verbinde neu…');
+        teardownAndReconnect();
+      } else if (iceState === 'disconnected') {
+        // Give it a few seconds to recover, then force reconnect
+        toast('Verbindung prüfen…');
+        setTimeout(() => {
+          if (state.call && state.call.peerConnection &&
+              state.call.peerConnection.iceConnectionState !== 'connected' &&
+              state.call.peerConnection.iceConnectionState !== 'completed') {
+            console.log('[Visibility] Still disconnected after resume — reconnecting');
+            teardownAndReconnect();
+          }
+        }, 5000);
+      }
+      // 'connected'/'completed' → survived! Do nothing.
+    } else if (!state.connected && state.partnerId) {
+      // Wasn't connected when we went to sleep, or connection dropped — try reconnect
+      console.log('[Visibility] Not connected after resume — reconnecting');
+      toast('Verbinde neu…');
+
+      // Broker may be dead after sleep — check and reinit if needed
+      if (state.peer && (state.peer.disconnected || state.peer.destroyed)) {
+        initPeer();
+        setTimeout(() => scheduleReconnect(1000), 2000);
+      } else {
+        scheduleReconnect(1000);
+      }
+    }
+  }
+});
+
+// Page freeze/resume (Android Chrome aggressive throttling)
+document.addEventListener('freeze', () => {
+  console.log('[Lifecycle] Page frozen');
+});
+document.addEventListener('resume', () => {
+  console.log('[Lifecycle] Page resumed from freeze');
+  // Trigger the same recovery as visibilitychange→visible
+  if (state.powered && !document.hidden) {
+    if (state.ctx && state.ctx.state === 'suspended') state.ctx.resume();
+    if (!state.connected && state.partnerId) scheduleReconnect(1000);
+  }
+});
+
 function onNetworkChange() {
   if (!state.powered) return;
   console.log('[NET] Network change detected (type:', navigator.connection?.type,
@@ -3101,6 +3204,7 @@ function powerOff() {
   if (!state.powered) return;
   window.removeEventListener('online', onNetworkBack);
   if (navigator.connection) navigator.connection.removeEventListener('change', onNetworkChange);
+  releaseWakeLock();
   stopHeartbeat();
   clearTimeout(_reconnectTimer);
   // Stop clock + visualizer
