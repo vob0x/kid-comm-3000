@@ -1943,10 +1943,11 @@ async function rebuildOutgoingStream() {
   src.connect(chain.input);
   chain.nodes.unshift(src);
   state.outStream = chain.output.stream;
-  // Attach TX analyser for visualizer
+  // Attach TX analyser for visualizer — tap from mute node (before destination)
+  // chain.output is a MediaStreamAudioDestinationNode (terminal, no output to connect from)
   const txA = ctx.createAnalyser();
   txA.fftSize = 512;
-  chain.output.connect(txA);
+  chain.mute.connect(txA);
   state.txAnalyser = txA;
   return state.outStream;
 }
@@ -2271,29 +2272,36 @@ function initPeer(forceFreshId = false) {
     if (err.type === 'network' || err.type === 'disconnected') { toast('Netzwerkfehler'); return; }
     toast('Fehler: ' + err.type);
   });
+  let _brokerReconnectTimer = null;
+  let _lastBrokerDisconnect = 0;
   state.peer.on('disconnected', () => {
     console.log('[Peer] Broker disconnected');
     setConn('ready');
-    // PeerJS lost the broker connection — try to bring it back so the
-    // saved partner can still call us.
+    if (!state.powered) return;
+
+    // Throttle: ignore rapid-fire disconnected events (max once per 5s)
+    const now = Date.now();
+    if (now - _lastBrokerDisconnect < 5000) {
+      console.log('[Peer] Broker disconnect throttled');
+      return;
+    }
+    _lastBrokerDisconnect = now;
+
+    // Cancel any pending broker reconnect timers
+    clearTimeout(_brokerReconnectTimer);
+
+    // Try to reconnect to broker
     try { state.peer.reconnect(); } catch(_) {}
-    // If reconnect doesn't work within 5s, try harder
-    setTimeout(() => {
-      if (state.powered && state.peer && state.peer.disconnected) {
-        console.log('[Peer] Broker still disconnected after 5s — re-reconnect');
-        try { state.peer.reconnect(); } catch(_) {}
+
+    // If reconnect doesn't work within 8s, full reinit
+    _brokerReconnectTimer = setTimeout(() => {
+      if (state.powered && state.peer && (state.peer.disconnected || state.peer.destroyed)) {
+        console.log('[Peer] Broker dead after 8s — full reinit');
+        fullPeerReinit().then(() => {
+          if (state.partnerId && !state.connected) scheduleReconnect(1000);
+        });
       }
-      // If still disconnected after another 10s, full reinit
-      setTimeout(() => {
-        if (state.powered && state.peer && (state.peer.disconnected || state.peer.destroyed)) {
-          console.log('[Peer] Broker dead — full reinit');
-          initPeer();
-          if (state.partnerId && !state.connected) {
-            setTimeout(() => scheduleReconnect(1000), 2000);
-          }
-        }
-      }, 10000);
-    }, 5000);
+    }, 8000);
   });
 }
 
