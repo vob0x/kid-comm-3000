@@ -744,6 +744,7 @@ body[data-conn="off"] .conn-label::after { content: 'OFFLINE'; }
   opacity: 0;
 }
 .compass.has-partner .compass-dist { opacity: 1; }
+.compass-dist.gps-status { opacity: 0.7; font-size: 9px; }
 
 /* FX indicator — small badge bottom-right of compass area */
 .fx-indicator {
@@ -2937,6 +2938,7 @@ function updateCompass() {
     els.compassPartner.style.opacity = dist < 50 ? '0.3' : '';
 
     // Distance readout
+    els.compassDist.classList.remove('gps-status');
     els.compassDist.textContent = formatDist(dist);
 
     // Proximity level — visual "hot/cold" treasure hunt effect
@@ -2947,7 +2949,17 @@ function updateCompass() {
   } else {
     els.compass.classList.remove('has-partner');
     setProximity(null);
-    els.compassDist.textContent = '';
+    // Show helpful status: why isn't the partner arrow visible?
+    if (state.partnerPos && !state.myPos) {
+      els.compassDist.textContent = 'GPS fehlt…';
+      els.compassDist.classList.add('gps-status');
+    } else if (!state.partnerPos && state.myPos) {
+      els.compassDist.textContent = 'Partner-GPS…';
+      els.compassDist.classList.add('gps-status');
+    } else {
+      els.compassDist.textContent = '';
+      els.compassDist.classList.remove('gps-status');
+    }
   }
 }
 
