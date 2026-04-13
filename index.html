@@ -3257,9 +3257,13 @@ async function powerOn() {
   state.powered = true;
   applyMode(false);
   setupViz();
-  startCompass();
   state._clockInterval = setInterval(updateClock, 1000);
   updateClock();
+
+  // Start compass with a delay — Firefox suppresses the geolocation permission
+  // prompt if it comes right after getUserMedia (mic). Delaying 2s lets the mic
+  // permission dialog settle, so Firefox shows the geolocation prompt properly.
+  setTimeout(() => { if (state.powered) startCompass(); }, 2000);
 
   // Fetch TURN credentials FIRST, then init peer.
   // This ensures TURN is available for the very first call (critical for WiFi↔Mobilfunk).
