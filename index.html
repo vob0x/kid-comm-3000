@@ -2246,25 +2246,44 @@ function initPeer(forceFreshId = false) {
     }
   });
 
+  let _unavailableIdRetries = 0;
   state.peer.on('error', (err) => {
     console.error('peer err', err);
     if (err.type === 'unavailable-id') {
-      // Saved ID is already taken on the broker — drop it and reinit fresh
-      store.del(STORE.myId);
+      // Our saved ID is still "taken" on the broker (stale session from before sleep).
+      // The broker typically frees it after 60s. Retry a few times before giving up.
+      _unavailableIdRetries++;
       try { state.peer.destroy(); } catch(_) {}
-      setTimeout(() => initPeer(true), 400);
+      if (_unavailableIdRetries <= 5) {
+        const delay = Math.min(_unavailableIdRetries * 5000, 15000);
+        console.log('[Peer] ID unavailable, retry', _unavailableIdRetries, 'in', delay, 'ms');
+        toast('Peer-ID belegt – Retry in ' + Math.round(delay / 1000) + 's…');
+        setTimeout(() => initPeer(false), delay); // keep trying with SAME ID
+      } else {
+        // After 5 retries (~45s), give up and get a new ID
+        console.warn('[Peer] ID still unavailable after 5 retries — generating new ID');
+        store.del(STORE.myId);
+        setTimeout(() => initPeer(true), 400);
+      }
       return;
     }
     if (err.type === 'peer-unavailable') {
-      // Auto-reconnect probe failed → silent retry in 8s, manual scan still works
-      if (state.autoConnectTried && !state.connected) {
-        toast('Partner offline – erneuter Versuch in 8 s');
+      // Partner's peer ID is not online on the broker right now.
+      // This is NORMAL after sleep — the partner may still be reconnecting.
+      // Keep retrying with increasing intervals for up to 2 minutes.
+      if (state.partnerId && !state.connected) {
+        _reconnectAttempt++;
+        const delay = Math.min(5000 + _reconnectAttempt * 2000, 20000);
+        console.log('[Peer] Partner unavailable — retry', _reconnectAttempt, 'in', Math.round(delay/1000), 's');
+        if (_reconnectAttempt <= 3) {
+          toast('Partner offline – Versuch in ' + Math.round(delay / 1000) + 's…');
+        }
         setConn('ready');
         setTimeout(() => {
-          if (state.partnerId && !state.connected && state.peer && !state.peer.disconnected) {
+          if (state.partnerId && !state.connected && isPeerReady()) {
             connectToPeer(state.partnerId);
           }
-        }, 8000);
+        }, delay);
       } else {
         toast('Kein Gerät unter diesem Code'); setConn('ready');
       }
@@ -3422,18 +3441,31 @@ document.addEventListener('visibilitychange', () => {
     if (state.connected || state.partnerId) acquireAllKeepAlives();
 
     // 3) Check if connection survived
-    if (state.connected && state.call && state.call.peerConnection) {
+    // After long sleep (>30s), assume connection is dead regardless of state
+    // (close events don't fire in background, so state.connected may be stale)
+    if (hiddenMs > 30000 && state.partnerId) {
+      console.log('[Visibility] Was hidden', Math.round(hiddenMs/1000), 's — assume dead, full reinit');
+      toast('Verbinde neu nach Ruhemodus…');
+      // Reset connection state (close events may not have fired)
+      stopHeartbeat();
+      if (state.call) { try { state.call.close(); } catch(_) {} }
+      if (state.conn) { try { state.conn.close(); } catch(_) {} }
+      state.call = null; state.conn = null; state.connected = false;
+      setConn('ready'); setTalk('off');
+      fullPeerReinit().then(() => {
+        if (state.partnerId && !state.connected) scheduleReconnect(300);
+      });
+    } else if (state.connected && state.call && state.call.peerConnection) {
       const pc = state.call.peerConnection;
       const iceState = pc.iceConnectionState;
       console.log('[Visibility] ICE state after resume:', iceState);
 
       if (iceState === 'failed' || iceState === 'closed') {
         console.log('[Visibility] Connection dead after sleep — reconnecting');
-        toast('Verbindung verloren (Ruhemodus) – verbinde neu…');
+        toast('Verbindung verloren – verbinde neu…');
         teardownAndReconnect();
       } else if (iceState === 'disconnected') {
         toast('Verbindung prüfen…');
-        // Short grace period (3s instead of 5s) — we want to reconnect fast
         setTimeout(() => {
           if (state.call && state.call.peerConnection &&
               state.call.peerConnection.iceConnectionState !== 'connected' &&
@@ -3443,13 +3475,12 @@ document.addEventListener('visibilitychange', () => {
           }
         }, 3000);
       }
-      // 'connected'/'completed' → survived! Do nothing.
     } else if (!state.connected && state.partnerId) {
       console.log('[Visibility] Not connected after resume — reconnecting');
       toast('Verbinde neu…');
 
-      // After any sleep >10s, full peer reinit — broker connection is likely stale
-      if (hiddenMs > 10000) {
+      // After any sleep >5s, full peer reinit — broker is likely stale
+      if (hiddenMs > 5000) {
         console.log('[Visibility] Was hidden', Math.round(hiddenMs/1000), 's — full reinit');
         fullPeerReinit().then(() => {
           if (state.partnerId && !state.connected) scheduleReconnect(300);
