@@ -2995,23 +2995,38 @@ function startCompass() {
     state.geoWatchId = navigator.geolocation.watchPosition(
       geoSuccess,
       (err) => { console.warn('[GPS] High accuracy error:', err.message); },
-      { enableHighAccuracy: true, maximumAge: 10000, timeout: 15000 }
+      { enableHighAccuracy: true, maximumAge: 30000, timeout: 20000 }
     );
     // Low-accuracy parallel watcher (WiFi/cell tower — fast indoors)
+    // Very permissive: accept positions up to 5 min old, long timeout
     state._geoWatchLow = navigator.geolocation.watchPosition(
       geoSuccess,
       (err) => { console.warn('[GPS] Low accuracy error:', err.message); },
-      { enableHighAccuracy: false, maximumAge: 60000, timeout: 10000 }
+      { enableHighAccuracy: false, maximumAge: 300000, timeout: 30000 }
     );
-    // Also try a one-shot getCurrentPosition for an immediate fix
+    // One-shot for immediate fix — accept anything cached up to 10 min
     navigator.geolocation.getCurrentPosition(
       geoSuccess,
       () => {},
-      { enableHighAccuracy: false, maximumAge: 120000, timeout: 8000 }
+      { enableHighAccuracy: false, maximumAge: 600000, timeout: 10000 }
     );
-    // Warn if still no fix after 20s (silent — just log)
+    // Retry one-shot periodically if we still have no fix
+    // (some browsers only deliver on getCurrentPosition, not watchPosition)
+    state._geoRetryInterval = setInterval(() => {
+      if (gotFix) return; // already have a fix, no need to retry
+      console.log('[GPS] Retrying one-shot getCurrentPosition…');
+      navigator.geolocation.getCurrentPosition(
+        geoSuccess,
+        (err) => { console.warn('[GPS] Retry error:', err.message); },
+        { enableHighAccuracy: false, maximumAge: 600000, timeout: 15000 }
+      );
+    }, 15000);
+    // Warn if still no fix after 20s
     setTimeout(() => {
-      if (!gotFix) console.warn('[GPS] Still no fix after 20 s');
+      if (!gotFix) {
+        console.warn('[GPS] Still no fix after 20 s');
+        toast('GPS nicht verfügbar – geh nach draußen');
+      }
     }, 20000);
     // Periodic position ping every 5s — ensures partner gets our position even if
     // connection was established after first GPS fix
@@ -3153,6 +3168,10 @@ function stopCompass() {
   if (state._posInterval) {
     clearInterval(state._posInterval);
     state._posInterval = null;
+  }
+  if (state._geoRetryInterval) {
+    clearInterval(state._geoRetryInterval);
+    state._geoRetryInterval = null;
   }
   if (state._compassSensor) {
     try { state._compassSensor.stop(); } catch(_) {}
