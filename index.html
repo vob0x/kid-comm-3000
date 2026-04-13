@@ -3000,6 +3000,8 @@ function startCompass() {
   if ('geolocation' in navigator) {
     let gotFix = false;
     const geoSuccess = (pos) => {
+      const acc = pos.coords.accuracy ? Math.round(pos.coords.accuracy) + 'm' : '?';
+      if (!gotFix) console.log('[GPS] First fix! accuracy:', acc);
       gotFix = true;
       state.myPos = { lat: pos.coords.latitude, lng: pos.coords.longitude };
       // Send position to partner
@@ -3012,59 +3014,71 @@ function startCompass() {
       }
       updateCompass();
     };
-    // Strategy: run BOTH high-accuracy (GPS satellite) and low-accuracy (WiFi/cell tower)
-    // in parallel. First one that delivers a fix wins. Low-accuracy works indoors.
-    state.geoWatchId = navigator.geolocation.watchPosition(
-      geoSuccess,
-      (err) => { console.warn('[GPS] High accuracy error:', err.message); },
-      { enableHighAccuracy: true, maximumAge: 30000, timeout: 20000 }
-    );
-    // Low-accuracy parallel watcher (WiFi/cell tower — fast indoors)
-    // Very permissive: accept positions up to 5 min old, long timeout
-    state._geoWatchLow = navigator.geolocation.watchPosition(
-      geoSuccess,
-      (err) => { console.warn('[GPS] Low accuracy error:', err.message); },
-      { enableHighAccuracy: false, maximumAge: 300000, timeout: 30000 }
-    );
-    // One-shot for immediate fix — accept anything cached up to 10 min
+    const geoError = (err, label) => {
+      console.warn('[GPS]', label, 'error:', err.code, err.message);
+      // code 1 = PERMISSION_DENIED, 2 = POSITION_UNAVAILABLE, 3 = TIMEOUT
+      if (err.code === 1) toast('Standort-Berechtigung verweigert!');
+    };
+
+    // Log permission state for diagnostics
+    if (navigator.permissions) {
+      navigator.permissions.query({ name: 'geolocation' }).then(p => {
+        console.log('[GPS] Permission state:', p.state);
+        if (p.state === 'denied') toast('Standort blockiert – Einstellungen prüfen');
+      }).catch(() => {});
+    }
+
+    // Strategy 0: Accept ANY cached position, no matter how old (Firefox sometimes
+    // has a cached position from other apps but won't fetch a new one indoors)
     navigator.geolocation.getCurrentPosition(
       geoSuccess,
       () => {},
-      { enableHighAccuracy: false, maximumAge: 600000, timeout: 10000 }
+      { enableHighAccuracy: false, maximumAge: Infinity, timeout: 5000 }
     );
+
+    // Strategy 1: High-accuracy GPS satellite
+    state.geoWatchId = navigator.geolocation.watchPosition(
+      geoSuccess,
+      (err) => geoError(err, 'High-accuracy'),
+      { enableHighAccuracy: true, maximumAge: 30000, timeout: 20000 }
+    );
+    // Strategy 2: Low-accuracy WiFi/cell tower — very permissive
+    state._geoWatchLow = navigator.geolocation.watchPosition(
+      geoSuccess,
+      (err) => geoError(err, 'Low-accuracy'),
+      { enableHighAccuracy: false, maximumAge: 300000, timeout: 30000 }
+    );
+
     // Retry one-shot periodically if we still have no fix
-    // (some browsers only deliver on getCurrentPosition, not watchPosition)
     state._geoRetryInterval = setInterval(() => {
-      if (gotFix) return; // already have a fix, no need to retry
-      console.log('[GPS] Retrying one-shot getCurrentPosition…');
+      if (gotFix) return;
+      console.log('[GPS] Retrying getCurrentPosition…');
       navigator.geolocation.getCurrentPosition(
         geoSuccess,
-        (err) => { console.warn('[GPS] Retry error:', err.message); },
-        { enableHighAccuracy: false, maximumAge: 600000, timeout: 15000 }
+        (err) => geoError(err, 'Retry'),
+        { enableHighAccuracy: false, maximumAge: Infinity, timeout: 10000 }
       );
-    }, 15000);
-    // Warn if still no fix after 20s — try IP geolocation as last resort
+    }, 12000);
+
+    // After 15s without GPS fix → IP geolocation fallback
     setTimeout(() => {
       if (!gotFix) {
-        console.warn('[GPS] Still no fix after 20 s — trying IP geolocation');
-        toast('GPS nicht verfügbar – nutze IP-Ortung…');
-        // IP geolocation fallback: rough position (~1-50 km accuracy)
-        // but enough for compass direction over longer distances
+        console.warn('[GPS] No fix after 15s — trying IP geolocation');
+        toast('Kein GPS – nutze IP-Ortung…');
         fetchIPLocation().then(pos => {
-          if (pos && !gotFix) {
-            console.log('[GPS] IP geolocation fallback:', pos.lat.toFixed(3), pos.lng.toFixed(3));
+          if (pos && !state.myPos) {
+            console.log('[GPS] IP fallback:', pos.lat.toFixed(3), pos.lng.toFixed(3));
             state.myPos = pos;
+            state._posIsIPBased = true;
             if (state.conn && state.conn.open) {
               try { state.conn.send({ type: 'pos', lat: pos.lat, lng: pos.lng }); } catch(_) {}
             }
             updateCompass();
-            toast('IP-Ortung aktiv (ungenau)');
+            toast('IP-Ortung aktiv (grob)');
           }
-        }).catch(() => {
-          toast('Ortung fehlgeschlagen');
-        });
+        }).catch(() => toast('Ortung fehlgeschlagen'));
       }
-    }, 20000);
+    }, 15000);
     // Periodic position ping every 5s — ensures partner gets our position even if
     // connection was established after first GPS fix
     state._posInterval = setInterval(() => {
