@@ -20,11 +20,9 @@
    KID COMM 3000 — futuristic multi-mode walkie talkie PWA
    ============================================================ */
 
-* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; user-select: none; -webkit-user-select: none; margin: 0; padding: 0; }
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; user-select: none; margin: 0; padding: 0; }
 
 html, body {
-  width: 100%;
-  height: 100%;
   height: 100dvh;
   overflow: hidden;
   overscroll-behavior: none;
@@ -48,7 +46,7 @@ body {
   --text-dim: #6a8bc0;
   --danger: #ff2a3a;
   --go: #00ff88;
-  transition: --primary 400ms ease, --accent 400ms ease;
+  /* CSS custom properties can't be transitioned natively — theme switches are instant */
 }
 
 /* ---------- THEME: POLIZEI ---------- */
@@ -465,6 +463,27 @@ body[data-mode="geheim"]    .bg-geheim    { display: block; }
 }
 .power-btn:active { transform: scale(0.92); }
 
+/* ---- Focus styles (accessibility + keyboard nav) ---- */
+.power-btn:focus-visible,
+.talk-btn:focus-visible,
+.nav-btn:focus-visible,
+.call-btn:focus-visible,
+.mini-btn:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+  box-shadow: 0 0 12px var(--primary-glow);
+}
+
+body[data-state="off"] .talk-btn,
+body[data-state="off"] .nav-btn,
+body[data-state="off"] .call-btn,
+body[data-state="off"] .mini-btn {
+  pointer-events: none;
+  opacity: 0.25;
+  filter: grayscale(0.8);
+  cursor: not-allowed;
+}
+
 .mode-title {
   display: flex;
   align-items: center;
@@ -482,7 +501,7 @@ body[data-mode="geheim"]    .bg-geheim    { display: block; }
   line-height: 1;
 }
 .mode-name { opacity: 0.85; }
-.conn-label { display: none; }
+.conn-label { display: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
 .ch-small { display: none; }
 .conn-indicator {
   display: flex;
@@ -500,9 +519,10 @@ body[data-mode="geheim"]    .bg-geheim    { display: block; }
   background: #444;
   box-shadow: inset 0 0 2px #000;
   transition: all 200ms;
+  animation-play-state: paused;
 }
 body[data-conn="ready"]     .conn-dot { background: #ffae33; box-shadow: 0 0 8px #ffae33; }
-body[data-conn="connecting"] .conn-dot { background: #ffae33; animation: blink 0.8s infinite; }
+body[data-conn="connecting"] .conn-dot { background: #ffae33; animation: blink 0.8s infinite; animation-play-state: running; }
 body[data-conn="connected"] .conn-dot { background: var(--go); box-shadow: 0 0 10px var(--go); }
 body[data-conn="ready"] .conn-label::after { content: 'BEREIT'; }
 body[data-conn="connecting"] .conn-label::after { content: 'VERBINDE'; }
@@ -557,6 +577,7 @@ body[data-conn="off"] .conn-label::after { content: 'OFFLINE'; }
   color: var(--accent);
   text-shadow: 0 0 8px var(--accent-glow);
   display: none;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%;
 }
 
 /* ---- Compass — centered hero element ---- */
@@ -574,8 +595,8 @@ body[data-conn="off"] .conn-label::after { content: 'OFFLINE'; }
   border-radius: 50%;
   border: 2px solid var(--surface-border);
   box-shadow: 0 0 14px var(--primary-glow), inset 0 0 10px rgba(0,0,0,0.5);
+  transition: border-color 0.5s ease, box-shadow 0.5s ease, border-width 0.3s ease;
   pointer-events: none;
-  transition: border-color 0.5s, box-shadow 0.5s;
 }
 .compass-dial {
   position: absolute;
@@ -609,10 +630,10 @@ body[data-conn="off"] .conn-label::after { content: 'OFFLINE'; }
   width: 10px; height: 10px;
   margin: -5px 0 0 -5px;
   border-radius: 50%;
+  transition: background 0.5s ease, box-shadow 0.5s ease, transform 0.3s ease;
   background: var(--primary);
   box-shadow: 0 0 8px var(--primary-glow);
   z-index: 5;
-  transition: background 0.4s, box-shadow 0.4s, transform 0.4s;
   will-change: transform;
 }
 /* Radar ping — concentric ring expanding from center */
@@ -714,13 +735,13 @@ body[data-conn="off"] .conn-label::after { content: 'OFFLINE'; }
   left: 50%;
   transform: translateX(-50%);
   font-family: 'Share Tech Mono', monospace;
+  transition: color 0.5s ease, text-shadow 0.5s ease, opacity 0.3s;
   font-size: 12px;
   letter-spacing: 1px;
   color: var(--primary);
   text-shadow: 0 0 8px var(--primary-glow);
   white-space: nowrap;
   opacity: 0;
-  transition: opacity 0.3s, color 0.5s;
 }
 .compass.has-partner .compass-dist { opacity: 1; }
 
@@ -788,6 +809,8 @@ body[data-tx="1"] .ct-tr::before { opacity: 1; }
     inset 0 0 30px rgba(255, 255, 255, 0.15),
     inset 0 -4px 12px rgba(0, 0, 0, 0.4);
   transition: all 160ms;
+  will-change: transform;
+  contain: paint;
 }
 .talk-icon {
   font-size: 48px;
@@ -920,6 +943,8 @@ body[data-talk="off"] .talk-btn {
   font-size: 28px;
   line-height: 1;
   padding: 12px 2px;
+  min-width: 44px;
+  min-height: 44px;
   cursor: pointer;
   backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);
@@ -946,7 +971,7 @@ body[data-talk="off"] .talk-btn {
 .sos-flash {
   position: fixed;
   inset: 0;
-  z-index: 150;
+  z-index: 200;
   background: radial-gradient(circle, rgba(255,0,0,0.6), rgba(255,0,0,0.3));
   pointer-events: none;
   opacity: 0;
@@ -985,7 +1010,7 @@ body[data-talk="off"] .talk-btn {
   background: linear-gradient(180deg, var(--bg-mid), var(--bg-deep));
   border: 1.5px solid var(--surface-border);
   border-radius: 16px;
-  padding: 24px 20px;
+  padding: calc(env(safe-area-inset-top, 0px) + 16px) 16px calc(env(safe-area-inset-bottom, 0px) + 16px);
   max-width: 360px;
   width: 100%;
   text-align: center;
@@ -1085,7 +1110,7 @@ body[data-state="on"] .power-btn {
 /* ---- Debug Log (tap SIG 3x to toggle) ---- */
 .debug-log {
   position: absolute;
-  bottom: 24px; left: 4px; right: 4px;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 24px); left: 4px; right: 4px;
   max-height: 40%;
   overflow-y: auto;
   background: rgba(0, 0, 0, 0.92);
@@ -1110,7 +1135,6 @@ body[data-state="on"] .power-btn {
   transform: none;
   background: rgba(0, 0, 0, 0.95);
   color: var(--primary);
-  padding: 10px 22px;
   border-radius: 24px;
   border: 1px solid var(--surface-border);
   font-family: 'Share Tech Mono', monospace;
@@ -1119,19 +1143,19 @@ body[data-state="on"] .power-btn {
   z-index: 200;
   opacity: 0;
   pointer-events: none;
-  transition: opacity 250ms;
   text-shadow: 0 0 6px var(--primary-glow);
   text-align: center;
   align-self: center;
   max-width: 90%;
-  height: 0;
-  padding: 0;
+  max-height: 0;
+  padding: 0 22px;
   margin: 0;
   overflow: hidden;
+  transition: opacity 250ms, max-height 250ms, padding 250ms;
 }
 .toast.show {
   opacity: 1;
-  height: auto;
+  max-height: 50px;
   padding: 10px 22px;
   margin: 0 12px;
 }
@@ -1169,7 +1193,7 @@ body[data-state="on"] .power-btn {
 }
 @media (max-height: 600px) {
   .top-bar { padding: 6px 10px; }
-  .power-btn { width: 34px; height: 34px; }
+  .power-btn { width: 44px; height: 44px; min-width: 44px; min-height: 44px; }
   .mode-title { font-size: 14px; }
   .talk-btn { height: 68px; }
   .talk-icon { font-size: 30px; }
@@ -1177,6 +1201,14 @@ body[data-state="on"] .power-btn {
   .bottom-row .mini-btn { padding: 8px 2px; font-size: 24px; }
   .compass { width: 80px; height: 80px; }
   .ch-big { font-size: 36px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
 </style>
 </head>
@@ -1248,7 +1280,7 @@ body[data-state="on"] .power-btn {
         <div class="compass-bezel"></div>
         <!-- Rotating dial: spins so N always points geographic north -->
         <div class="compass-dial" id="compassDial">
-          <svg viewBox="0 0 120 120" class="compass-dial-svg" xmlns="http://www.w3.org/2000/svg">
+          <svg viewBox="0 0 120 120" class="compass-dial-svg" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
             <!-- Tick marks every 30° -->
             <g stroke="var(--text-dim)" stroke-width="1.2" opacity="0.5">
               <line x1="60" y1="4"  x2="60" y2="12"/>
@@ -1277,7 +1309,7 @@ body[data-state="on"] .power-btn {
         </div>
         <!-- Partner arrow (separate layer, rotates independently) -->
         <div class="compass-partner" id="compassPartner">
-          <svg viewBox="0 0 120 120" class="compass-partner-svg" xmlns="http://www.w3.org/2000/svg">
+          <svg viewBox="0 0 120 120" class="compass-partner-svg" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
             <defs>
               <linearGradient id="partnerArrow" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="0%" stop-color="#00e5ff" id="partnerStopA"/>
@@ -1295,7 +1327,7 @@ body[data-state="on"] .power-btn {
         <!-- Radar ping ring -->
         <div class="compass-ping"></div>
         <!-- Distance readout -->
-        <div class="compass-dist" id="compassDist"></div>
+        <div class="compass-dist" id="compassDist" aria-live="polite"></div>
       </div>
     </div>
     <div class="fx-indicator" id="fxTag" title="Stimmeffekt">
@@ -1413,7 +1445,7 @@ const STORE = {
   partner: 'kc_partner_id_v1',
 };
 const store = {
-  get(k)    { try { return localStorage.getItem(k); } catch(e) { return null; } },
+  get(k)    { try { return localStorage.getItem(k); } catch(e) { console.warn('[Store]', k, e.message); return null; } },
   set(k, v) { try { localStorage.setItem(k, v); } catch(e) {} },
   del(k)    { try { localStorage.removeItem(k); } catch(e) {} },
 };
@@ -1455,6 +1487,7 @@ const state = {
   _clockInterval: null,
   _vizRafId: null,
   _rxNodes: null,
+  _safetyTimeout: null,
 };
 
 // ---------- DOM ----------
@@ -1603,6 +1636,7 @@ function updateClock() {
 async function initAudio() {
   if (state.ctx) return;
   const Ctx = window.AudioContext || window.webkitAudioContext;
+  if (!Ctx) { toast('Audio nicht unterstützt'); return; }
   state.ctx = new Ctx();
   if (state.ctx.state === 'suspended') await state.ctx.resume();
 
@@ -1909,6 +1943,11 @@ async function rebuildOutgoingStream() {
   src.connect(chain.input);
   chain.nodes.unshift(src);
   state.outStream = chain.output.stream;
+  // Attach TX analyser for visualizer
+  const txA = ctx.createAnalyser();
+  txA.fftSize = 512;
+  chain.output.connect(txA);
+  state.txAnalyser = txA;
   return state.outStream;
 }
 
@@ -1985,6 +2024,7 @@ function setupViz() {
     cv.height = Math.max(1, Math.floor(r.height * dpr));
   }
   resize();
+  state._vizResizeHandler = resize;
   window.addEventListener('resize', resize);
   const ctx2d = cv.getContext('2d');
 
@@ -2098,6 +2138,45 @@ async function fetchTurnServers() {
 }
 
 let ICE_SERVERS = [...BASE_ICE]; // will be enriched with TURN on power-on
+let _turnFetchedAt = 0;          // timestamp of last TURN fetch
+const TURN_MAX_AGE = 10 * 60 * 1000; // refresh TURN every 10 min (credentials TTL varies)
+
+// Refresh TURN credentials if they're older than TURN_MAX_AGE.
+// Returns a promise that resolves when ICE_SERVERS is up-to-date.
+async function refreshTurnIfNeeded() {
+  if (Date.now() - _turnFetchedAt < TURN_MAX_AGE) return; // still fresh
+  console.log('[TURN] Credentials older than', TURN_MAX_AGE / 60000, 'min — refreshing');
+  try {
+    const turnServers = await fetchTurnServers();
+    ICE_SERVERS = [...BASE_ICE, ...turnServers];
+    _turnFetchedAt = Date.now();
+    console.log('[TURN] Refreshed, total ICE servers:', ICE_SERVERS.length);
+  } catch (e) {
+    console.warn('[TURN] Refresh failed:', e.message);
+  }
+}
+
+// Full peer reinit: destroy old peer and create a fresh one with fresh TURN.
+// Used when the PeerJS broker is irrecoverably broken after multiple failures.
+async function fullPeerReinit() {
+  console.log('[Peer] Full reinit — destroying old peer, refreshing TURN');
+  // Destroy old peer completely
+  if (state.peer) {
+    try { state.peer.destroy(); } catch(_) {}
+    state.peer = null;
+  }
+  state.call = null;
+  state.conn = null;
+  state.connected = false;
+  // Force-refresh TURN (ignore cache age)
+  _turnFetchedAt = 0;
+  await refreshTurnIfNeeded();
+  // Create brand-new peer
+  initPeer();
+  return waitForPeerOpen(8000);
+}
+
+function isPeerReady() { return !!(state.peer && state.myId && !state.peer.disconnected && !state.peer.destroyed); }
 
 function initPeer(forceFreshId = false) {
   // Use a stable, persistent ID so the saved partner can find us across sessions.
@@ -2138,6 +2217,7 @@ function initPeer(forceFreshId = false) {
         state.call = null;
       }
       const stream = await rebuildOutgoingStream();
+      if (!stream) { toast('Mikrofon-Fehler'); return; }
       incoming.answer(stream);
       state.call = incoming;
       bindCall(incoming);
@@ -2219,6 +2299,7 @@ function initPeer(forceFreshId = false) {
 
 function bindCall(call) {
   call.on('stream', (remoteStream) => {
+    clearTimeout(state._safetyTimeout);
     state.remoteStream = remoteStream;
     processRemoteStream(remoteStream);
     state.connected = true;
@@ -2287,6 +2368,7 @@ function bindCall(call) {
         // If not recovered, force reconnect.
         clearTimeout(pc._disconnectTimer);
         pc._disconnectTimer = setTimeout(() => {
+          if (state.call && state.call.peerConnection !== pc) return; // stale timer
           if (pc.iceConnectionState === 'disconnected') {
             console.log('[ICE] Stuck in disconnected for 15s — forcing reconnect');
             teardownAndReconnect();
@@ -2331,11 +2413,14 @@ function teardownAndReconnect() {
     console.log('[Reconnect] Too many teardowns (' + _teardownCount + ') — backing off', backoff, 'ms');
     toast('Instabil – warte ' + Math.round(backoff / 1000) + 's…');
     els.sigTag.textContent = 'SIG: ⏳';
-    setTimeout(() => {
+    setTimeout(async () => {
       _teardownCount = 0;
       _isReconnecting = false;
       if (!state.connected && state.powered && state.partnerId) {
-        teardownAndReconnect();
+        // After backoff, do a full peer reinit — the old peer is probably broken
+        console.log('[Reconnect] Post-backoff: full peer reinit');
+        await fullPeerReinit();
+        if (state.partnerId && !state.connected) scheduleReconnect(500);
       }
     }, backoff);
     return;
@@ -2368,6 +2453,7 @@ function teardownAndReconnect() {
   els.sigTag.textContent = 'SIG: ░░░░';
 
   setTimeout(() => {
+    if (!state.powered) { _isReconnecting = false; return; }
     _isReconnecting = false;
     if (!state.powered || state.connected) return;
     if (iAmCaller) {
@@ -2389,24 +2475,49 @@ let _reconnectTimer = null;
 let _reconnectAttempt = 0;
 function scheduleReconnect(delayMs) {
   clearTimeout(_reconnectTimer);
-  _reconnectTimer = setTimeout(() => {
+  _reconnectTimer = null;
+  _reconnectTimer = setTimeout(async () => {
     if (!state.powered || state.connected) { _reconnectAttempt = 0; return; }
     if (!state.partnerId) return;
     _reconnectAttempt++;
     console.log('[Reconnect] Attempt', _reconnectAttempt);
 
-    // Ensure broker is alive
-    if (!state.peer || state.peer.disconnected || state.peer.destroyed) {
-      initPeer();
-      setTimeout(() => {
-        if (state.partnerId && !state.connected) connectToPeer(state.partnerId);
-      }, 2000);
+    // After 5 failed attempts: full peer reinit with fresh TURN
+    // This fixes the case where PeerJS broker state becomes corrupt
+    if (_reconnectAttempt >= 5 && _reconnectAttempt % 5 === 0) {
+      console.log('[Reconnect] 5+ failures — full peer reinit with fresh TURN');
+      toast('Peer-Server neu verbinden…');
+      const ok = await fullPeerReinit();
+      if (!ok) {
+        console.warn('[Reconnect] Full reinit failed — retrying in 10s');
+        scheduleReconnect(10000);
+        return;
+      }
+      // After successful reinit, try connecting
+      if (state.partnerId && !state.connected) {
+        connectToPeer(state.partnerId);
+      }
     } else {
-      connectToPeer(state.partnerId);
+      // Refresh TURN if stale (but don't do full reinit)
+      await refreshTurnIfNeeded();
+      // Update ICE config on existing peer if possible
+      if (state.peer && state.peer.options) {
+        state.peer.options.config = { iceServers: ICE_SERVERS };
+      }
+
+      // Ensure broker is alive
+      if (!state.peer || state.peer.disconnected || state.peer.destroyed) {
+        initPeer();
+        setTimeout(() => {
+          if (state.partnerId && !state.connected) connectToPeer(state.partnerId);
+        }, 2000);
+      } else {
+        connectToPeer(state.partnerId);
+      }
     }
 
-    // If this attempt doesn't work, try again with backoff (max 15s)
-    const nextDelay = Math.min(3000 * _reconnectAttempt, 15000);
+    // If this attempt doesn't work, try again with backoff (max 20s)
+    const nextDelay = Math.min(3000 * _reconnectAttempt, 20000);
     setTimeout(() => {
       if (!state.connected && state.powered && state.partnerId) {
         console.log('[Reconnect] Attempt', _reconnectAttempt, 'seems stale — retrying in', nextDelay, 'ms');
@@ -2414,7 +2525,7 @@ function scheduleReconnect(delayMs) {
       } else {
         _reconnectAttempt = 0;
       }
-    }, 10000);
+    }, 12000);
   }, delayMs);
 }
 
@@ -2434,7 +2545,7 @@ function startHeartbeat() {
       console.log('[Heartbeat] No pong for 35s — connection dead');
       toast('Verbindung tot – verbinde neu…');
       stopHeartbeat();
-      if (state.call) { try { state.call.close(); } catch(_) {} }
+      teardownAndReconnect();
     }
   }, 8000); // ping every 8s
 }
@@ -2482,17 +2593,31 @@ function bindDataConn(dc) {
       }
     } catch(e) { console.error(e); }
   });
-  dc.on('close', () => { state.conn = null; stopHeartbeat(); });
+  dc.on('close', () => {
+    // Only clear state if THIS dc is still the active one (not replaced by a new connection)
+    if (state.conn === dc || !state.conn) {
+      state.conn = null;
+      stopHeartbeat();
+    } else {
+      console.log('[DC] Old DataChannel closed (replaced by new) — ignoring');
+    }
+  });
 }
 
 function waitForPeerOpen(timeoutMs = 6000) {
-  if (state.peer && state.myId && !state.peer.disconnected) return Promise.resolve(true);
+  if (isPeerReady()) return Promise.resolve(true);
   if (!state.peer) return Promise.resolve(false);
   return new Promise((resolve) => {
     let done = false;
-    const finish = (ok) => { if (done) return; done = true; resolve(ok); };
     const onOpen  = () => finish(true);
     const onError = () => finish(false);
+    const finish = (ok) => {
+      if (done) return;
+      done = true;
+      state.peer.off('open', onOpen);
+      state.peer.off('error', onError);
+      resolve(ok);
+    };
     state.peer.on('open',  onOpen);
     state.peer.on('error', onError);
     setTimeout(() => finish(false), timeoutMs);
@@ -2514,7 +2639,7 @@ async function connectToPeer(otherId) {
 
   // 1) Peer-Broker muss offen sein
   if (!state.peer) { toast('Funk nicht bereit – Gerät neu starten'); setConn('ready'); return; }
-  if (!state.myId || state.peer.disconnected) {
+  if (!isPeerReady()) {
     const ok = await waitForPeerOpen();
     if (!ok) { toast('Signalserver nicht erreichbar'); setConn('ready'); return; }
   }
@@ -2550,7 +2675,7 @@ async function connectToPeer(otherId) {
     store.set(STORE.partner, otherId);
 
     // 4) Safety-Net: wenn in 10s kein remote-stream ankommt, sauber abbrechen
-    setTimeout(() => {
+    state._safetyTimeout = setTimeout(() => {
       if (!state.connected) {
         toast('Keine Antwort – scannt das andere Gerät?');
         setConn('ready');
@@ -2819,6 +2944,16 @@ function updateCompass() {
 }
 
 function startCompass() {
+  // Clean up any existing orientation listeners from a previous startCompass() call
+  if (state._compassListeners) {
+    window.removeEventListener('deviceorientationabsolute', state._compassListeners.onAbsolute, true);
+    window.removeEventListener('deviceorientation', state._compassListeners.onEvent, true);
+    state._compassListeners = null;
+  }
+  if (state._compassSensor) {
+    try { state._compassSensor.stop(); } catch(_) {}
+    state._compassSensor = null;
+  }
   // GPS
   if ('geolocation' in navigator) {
     let gotFix = false;
@@ -3040,7 +3175,9 @@ async function powerOn() {
   // This ensures TURN is available for the very first call (critical for WiFi↔Mobilfunk).
   toast('TURN-Server laden…');
   fetchTurnServers().then((turnServers) => {
+    if (!state.powered) return;
     ICE_SERVERS = [...BASE_ICE, ...turnServers];
+    _turnFetchedAt = Date.now();
     console.log('[ICE] Total servers:', ICE_SERVERS.length,
       '(STUN:', BASE_ICE.length, '+ TURN:', turnServers.length, ')');
     if (turnServers.length === 0 && METERED_APP && METERED_KEY) {
@@ -3051,7 +3188,9 @@ async function powerOn() {
     // NOW init peer — TURN is guaranteed ready before any call happens
     initPeer();
   }).catch(() => {
+    if (!state.powered) return;
     // Even if TURN fails, still init peer with STUN-only
+    _turnFetchedAt = Date.now(); // prevent immediate re-fetch loop
     toast('TURN-Fehler – nur WLAN');
     initPeer();
   });
@@ -3142,11 +3281,18 @@ document.addEventListener('visibilitychange', () => {
       console.log('[Visibility] Not connected after resume — reconnecting');
       toast('Verbinde neu…');
 
-      // Broker may be dead after sleep — check and reinit if needed
-      if (state.peer && (state.peer.disconnected || state.peer.destroyed)) {
+      // After long sleep (>30s) force full peer reinit — broker is likely dead
+      if (hiddenMs > 30000) {
+        console.log('[Visibility] Was hidden', Math.round(hiddenMs/1000), 's — full reinit');
+        fullPeerReinit().then(() => {
+          if (state.partnerId && !state.connected) scheduleReconnect(500);
+        });
+      } else if (state.peer && (state.peer.disconnected || state.peer.destroyed)) {
         initPeer();
         setTimeout(() => scheduleReconnect(1000), 2000);
       } else {
+        // Refresh TURN in background (may have expired during sleep)
+        refreshTurnIfNeeded();
         scheduleReconnect(1000);
       }
     }
@@ -3206,10 +3352,15 @@ function powerOff() {
   if (navigator.connection) navigator.connection.removeEventListener('change', onNetworkChange);
   releaseWakeLock();
   stopHeartbeat();
-  clearTimeout(_reconnectTimer);
+  clearTimeout(_reconnectTimer); _reconnectTimer = null;
+  clearTimeout(state._stabilityTimer); state._stabilityTimer = null;
+  clearTimeout(state._safetyTimeout); state._safetyTimeout = null;
+  _reconnectAttempt = 0; _teardownCount = 0; _isReconnecting = false;
+  _turnFetchedAt = 0; // force fresh TURN on next power-on
   // Stop clock + visualizer
   if (state._clockInterval) { clearInterval(state._clockInterval); state._clockInterval = null; }
   if (state._vizRafId) { cancelAnimationFrame(state._vizRafId); state._vizRafId = null; }
+  if (state._vizResizeHandler) { window.removeEventListener('resize', state._vizResizeHandler); state._vizResizeHandler = null; }
   // Reset compass rotation tracking
   _dialRot = 0; _partnerRot = 0;
   playShutdownSequence();
@@ -3285,7 +3436,7 @@ if ('serviceWorker' in navigator && location.protocol === 'https:') {
 }
 </script>
 
-<div class="sos-flash" id="sosFlash"></div>
+<div class="sos-flash" id="sosFlash" role="alert" aria-live="assertive" aria-label="SOS Signal"></div>
 
 </body>
 </html>
