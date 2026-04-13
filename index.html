@@ -2170,6 +2170,7 @@ async function fullPeerReinit() {
   state.call = null;
   state.conn = null;
   state.connected = false;
+  _unavailableIdRetries = 0;
   // Force-refresh TURN (ignore cache age)
   _turnFetchedAt = 0;
   await refreshTurnIfNeeded();
@@ -2180,23 +2181,19 @@ async function fullPeerReinit() {
 
 function isPeerReady() { return !!(state.peer && state.myId && !state.peer.disconnected && !state.peer.destroyed); }
 
-function initPeer(forceFreshId = false) {
-  // Use a stable, persistent ID so the saved partner can find us across sessions.
-  // PeerJS IDs must match /^[A-Za-z0-9_-]+$/, max 50 chars-ish in practice.
-  let savedId = forceFreshId ? null : store.get(STORE.myId);
-  if (savedId && !/^[A-Za-z0-9_-]{1,40}$/.test(savedId)) savedId = null;
+let _unavailableIdRetries = 0;
+let _brokerReconnectTimer = null;
+let _lastBrokerDisconnect = 0;
+let _usingTempId = false; // true when we fell back to a suffixed temp ID
 
-  state.partnerId = store.get(STORE.partner);
-  state.autoConnectTried = false;
-
-  state.peer = new Peer(savedId || undefined, {
-    debug: 1,
-    config: { iceServers: ICE_SERVERS },
-  });
-
-  state.peer.on('open', (id) => {
+function bindPeerEvents(peer) {
+  peer.on('open', (id) => {
     state.myId = id;
-    store.set(STORE.myId, id);
+    // Only persist the ID if it's NOT a temporary suffixed one
+    if (!_usingTempId) {
+      store.set(STORE.myId, id);
+    }
+    _unavailableIdRetries = 0; // reset on successful open
     setConn('ready');
     toast('Funkgerät bereit · SIG OK');
     els.sigTag.textContent = 'SIG: READY';
@@ -2209,10 +2206,10 @@ function initPeer(forceFreshId = false) {
     }
   });
 
-  state.peer.on('call', async (incoming) => {
+  peer.on('call', async (incoming) => {
     console.log('[Peer] Incoming call from', incoming.peer);
+    if (state.peer !== peer) return; // stale peer
     try {
-      // Close any existing call before accepting the new one
       if (state.call) {
         console.log('[Peer] Closing old call before accepting new');
         try { state.call.close(); } catch(_) {}
@@ -2223,7 +2220,6 @@ function initPeer(forceFreshId = false) {
       incoming.answer(stream);
       state.call = incoming;
       bindCall(incoming);
-      // remember whoever just called us
       if (incoming.peer && incoming.peer !== state.myId) {
         state.partnerId = incoming.peer;
         store.set(STORE.partner, incoming.peer);
@@ -2233,9 +2229,9 @@ function initPeer(forceFreshId = false) {
     }
   });
 
-  state.peer.on('connection', (dc) => {
+  peer.on('connection', (dc) => {
     console.log('[Peer] Incoming DataChannel from', dc.peer);
-    // Close old DataChannel before accepting new
+    if (state.peer !== peer) return; // stale peer
     if (state.conn) {
       try { state.conn.close(); } catch(_) {}
     }
@@ -2246,31 +2242,40 @@ function initPeer(forceFreshId = false) {
     }
   });
 
-  let _unavailableIdRetries = 0;
-  state.peer.on('error', (err) => {
+  peer.on('error', (err) => {
     console.error('peer err', err);
     if (err.type === 'unavailable-id') {
       // Our saved ID is still "taken" on the broker (stale session from before sleep).
-      // The broker typically frees it after 60s. Retry a few times before giving up.
+      // Strategy: 3 quick retries with same ID, then use a temporary suffixed ID
+      // so we're online immediately. Keep original ID stored for next power cycle.
       _unavailableIdRetries++;
-      try { state.peer.destroy(); } catch(_) {}
-      if (_unavailableIdRetries <= 5) {
-        const delay = Math.min(_unavailableIdRetries * 5000, 15000);
+      try { peer.destroy(); } catch(_) {}
+      if (state.peer === peer) state.peer = null;
+      if (_unavailableIdRetries <= 3) {
+        const delay = _unavailableIdRetries * 1000;
         console.log('[Peer] ID unavailable, retry', _unavailableIdRetries, 'in', delay, 'ms');
-        toast('Peer-ID belegt – Retry in ' + Math.round(delay / 1000) + 's…');
-        setTimeout(() => initPeer(false), delay); // keep trying with SAME ID
+        toast('Verbinde…');
+        _usingTempId = false;
+        setTimeout(() => initPeer(false), delay);
       } else {
-        // After 5 retries (~45s), give up and get a new ID
-        console.warn('[Peer] ID still unavailable after 5 retries — generating new ID');
-        store.del(STORE.myId);
-        setTimeout(() => initPeer(true), 400);
+        // After 3 quick retries (~6s), use a temporary suffixed ID so we come
+        // online immediately. The original ID stays in storage for next time.
+        const baseId = store.get(STORE.myId);
+        const tempId = baseId ? baseId + '-' + Date.now().toString(36).slice(-4) : null;
+        console.warn('[Peer] ID still unavailable after 3 retries — using temp ID:', tempId);
+        toast('Verbinde mit neuem Signal…');
+        _usingTempId = true;
+        state.peer = new Peer(tempId || undefined, {
+          debug: 1,
+          config: { iceServers: ICE_SERVERS },
+        });
+        _unavailableIdRetries = 0;
+        bindPeerEvents(state.peer);
       }
       return;
     }
+    if (state.peer !== peer) return; // stale peer error
     if (err.type === 'peer-unavailable') {
-      // Partner's peer ID is not online on the broker right now.
-      // This is NORMAL after sleep — the partner may still be reconnecting.
-      // Keep retrying with increasing intervals for up to 2 minutes.
       if (state.partnerId && !state.connected) {
         _reconnectAttempt++;
         const delay = Math.min(5000 + _reconnectAttempt * 2000, 20000);
@@ -2292,14 +2297,13 @@ function initPeer(forceFreshId = false) {
     if (err.type === 'network' || err.type === 'disconnected') { toast('Netzwerkfehler'); return; }
     toast('Fehler: ' + err.type);
   });
-  let _brokerReconnectTimer = null;
-  let _lastBrokerDisconnect = 0;
-  state.peer.on('disconnected', () => {
+
+  peer.on('disconnected', () => {
     console.log('[Peer] Broker disconnected');
     setConn('ready');
     if (!state.powered) return;
+    if (state.peer !== peer) return; // stale peer
 
-    // Throttle: ignore rapid-fire disconnected events (max once per 5s)
     const now = Date.now();
     if (now - _lastBrokerDisconnect < 5000) {
       console.log('[Peer] Broker disconnect throttled');
@@ -2307,15 +2311,11 @@ function initPeer(forceFreshId = false) {
     }
     _lastBrokerDisconnect = now;
 
-    // Cancel any pending broker reconnect timers
     clearTimeout(_brokerReconnectTimer);
+    try { peer.reconnect(); } catch(_) {}
 
-    // Try to reconnect to broker
-    try { state.peer.reconnect(); } catch(_) {}
-
-    // If reconnect doesn't work within 8s, full reinit
     _brokerReconnectTimer = setTimeout(() => {
-      if (state.powered && state.peer && (state.peer.disconnected || state.peer.destroyed)) {
+      if (state.powered && state.peer === peer && (peer.disconnected || peer.destroyed)) {
         console.log('[Peer] Broker dead after 8s — full reinit');
         fullPeerReinit().then(() => {
           if (state.partnerId && !state.connected) scheduleReconnect(1000);
@@ -2323,6 +2323,23 @@ function initPeer(forceFreshId = false) {
       }
     }, 8000);
   });
+}
+
+function initPeer(forceFreshId = false) {
+  // Use a stable, persistent ID so the saved partner can find us across sessions.
+  let savedId = forceFreshId ? null : store.get(STORE.myId);
+  if (savedId && !/^[A-Za-z0-9_-]{1,40}$/.test(savedId)) savedId = null;
+
+  state.partnerId = store.get(STORE.partner);
+  state.autoConnectTried = false;
+  _usingTempId = false;
+
+  state.peer = new Peer(savedId || undefined, {
+    debug: 1,
+    config: { iceServers: ICE_SERVERS },
+  });
+
+  bindPeerEvents(state.peer);
 }
 
 function bindCall(call) {
@@ -2350,7 +2367,7 @@ function bindCall(call) {
     }, 30000);
     // Immediately share our position so the compass activates on both sides
     if (state.myPos && state.conn && state.conn.open) {
-      try { state.conn.send({ type: 'pos', lat: state.myPos.lat, lng: state.myPos.lng }); } catch(_) {}
+      try { const _pm = { type: 'pos', lat: state.myPos.lat, lng: state.myPos.lng }; if (state._posIsIPBased) _pm.ip = true; state.conn.send(_pm); } catch(_) {}
     }
   });
   call.on('close', () => {
@@ -2586,7 +2603,7 @@ function bindDataConn(dc) {
   dc.on('open', () => {
     // Send own position immediately so partner compass works right away
     if (state.myPos) {
-      try { dc.send({ type: 'pos', lat: state.myPos.lat, lng: state.myPos.lng }); } catch(_) {}
+      try { const _pm = { type: 'pos', lat: state.myPos.lat, lng: state.myPos.lng }; if (state._posIsIPBased) _pm.ip = true; dc.send(_pm); } catch(_) {}
     }
     // Start heartbeat once DataChannel is open
     startHeartbeat();
@@ -2617,6 +2634,7 @@ function bindDataConn(dc) {
         if (navigator.vibrate) navigator.vibrate([120, 80, 120, 80, 120]);
       } else if (obj.type === 'pos' && typeof obj.lat === 'number') {
         state.partnerPos = { lat: obj.lat, lng: obj.lng };
+        state._partnerPosIsIPBased = !!obj.ip; // partner flags IP-based position
         updateCompass();
       }
     } catch(e) { console.error(e); }
@@ -2978,15 +2996,21 @@ function updateCompass() {
     els.compassPartner.style.transform = 'rotate(' + _partnerRot + 'deg)';
     els.compassPartner.style.opacity = dist < 50 ? '0.3' : '';
 
-    // Distance readout
+    // Distance readout — mark as approximate if either position is IP-based
     els.compassDist.classList.remove('gps-status');
-    els.compassDist.textContent = formatDist(dist);
-
-    // Proximity level — visual "hot/cold" treasure hunt effect
-    if (dist < 30)       setProximity('hot');     // 🟢 bright green, rapid pulse, scale up
-    else if (dist < 100) setProximity('close');   // 🟠 orange, fast pulse, radar ping
-    else if (dist < 500) setProximity('medium');  // 🟡 yellow, medium pulse
-    else                 setProximity('far');     // normal theme color, slow pulse
+    const isApprox = state._posIsIPBased || state._partnerPosIsIPBased;
+    if (isApprox) {
+      els.compassDist.textContent = '~' + formatDist(dist) + ' (IP)';
+      // Don't use proximity effects with IP positions (too inaccurate)
+      setProximity(null);
+    } else {
+      els.compassDist.textContent = formatDist(dist);
+      // Proximity level — visual "hot/cold" treasure hunt effect
+      if (dist < 30)       setProximity('hot');
+      else if (dist < 100) setProximity('close');
+      else if (dist < 500) setProximity('medium');
+      else                 setProximity('far');
+    }
   } else {
     els.compass.classList.remove('has-partner');
     setProximity(null);
@@ -3021,11 +3045,16 @@ function startCompass() {
     const geoSuccess = (pos) => {
       const acc = pos.coords.accuracy ? Math.round(pos.coords.accuracy) + 'm' : '?';
       if (!gotFix) console.log('[GPS] First fix! accuracy:', acc);
+      if (state._posIsIPBased) {
+        console.log('[GPS] Real GPS replaces IP fallback');
+        toast('GPS aktiv!');
+      }
       gotFix = true;
+      state._posIsIPBased = false; // real GPS is always better than IP
       state.myPos = { lat: pos.coords.latitude, lng: pos.coords.longitude };
       // Send position to partner
       if (state.conn && state.conn.open) {
-        try { state.conn.send({ type: 'pos', lat: state.myPos.lat, lng: state.myPos.lng }); } catch(_) {}
+        try { const _pm = { type: 'pos', lat: state.myPos.lat, lng: state.myPos.lng }; if (state._posIsIPBased) _pm.ip = true; state.conn.send(_pm); } catch(_) {}
       }
       // GPS heading fallback: coords.heading gives direction of travel (when moving > ~3 km/h)
       if (pos.coords.heading != null && !isNaN(pos.coords.heading) && pos.coords.speed > 0.8) {
@@ -3090,7 +3119,7 @@ function startCompass() {
             state.myPos = pos;
             state._posIsIPBased = true;
             if (state.conn && state.conn.open) {
-              try { state.conn.send({ type: 'pos', lat: pos.lat, lng: pos.lng }); } catch(_) {}
+              try { state.conn.send({ type: 'pos', lat: pos.lat, lng: pos.lng, ip: true }); } catch(_) {}
             }
             updateCompass();
             toast('IP-Ortung aktiv (grob)');
@@ -3099,10 +3128,17 @@ function startCompass() {
       }
     }, 15000);
     // Periodic position ping every 5s — ensures partner gets our position even if
-    // connection was established after first GPS fix
+    // connection was established after first GPS fix or via IP fallback
     state._posInterval = setInterval(() => {
-      if (state.myPos && state.conn && state.conn.open) {
-        try { state.conn.send({ type: 'pos', lat: state.myPos.lat, lng: state.myPos.lng }); } catch(_) {}
+      if (!state.myPos) return;
+      if (state.conn && state.conn.open) {
+        try {
+          const msg = { type: 'pos', lat: state.myPos.lat, lng: state.myPos.lng };
+          if (state._posIsIPBased) msg.ip = true;
+          state.conn.send(msg);
+        } catch(e) {
+          console.warn('[GPS] Position send failed:', e.message);
+        }
       }
     }, 5000);
   }
@@ -3139,8 +3175,11 @@ function startCompass() {
         const t1 = 2.0 * (qw * qz + qx * qy);
         const t2 = 1.0 - 2.0 * (ysqr + qz * qz);
         let heading = Math.atan2(t1, t2) * (180 / Math.PI);
-        // atan2 gives heading CW from East; convert to CW from North
-        heading = (90 - heading + 360) % 360;
+        // atan2 gives yaw of device X-axis in ENU (0°=East, CCW positive).
+        // We need compass bearing of the Y-axis (top of phone = "forward"):
+        // Y-axis direction = yaw + 90° in math convention.
+        // Compass bearing = 90° - math_angle, so: 90 - (yaw+90) = -yaw = (360-yaw)%360
+        heading = (360 - heading) % 360;
         setHeading(heading, 'sensor');
       });
       sensor.addEventListener('error', (e) => {
@@ -3255,6 +3294,8 @@ function stopCompass() {
   }
   state.myPos = null;
   state.partnerPos = null;
+  state._posIsIPBased = false;
+  state._partnerPosIsIPBased = false;
   state.heading = null;
   els.compass.classList.remove('has-partner');
   setProximity(null);
