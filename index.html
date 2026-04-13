@@ -2892,6 +2892,28 @@ function formatDist(m) {
   return (m / 1000).toFixed(1) + ' km';
 }
 
+// IP-based geolocation fallback — rough (~1-50 km) but works indoors/with VPN off.
+// Tries multiple free APIs in case one is down.
+async function fetchIPLocation() {
+  const apis = [
+    { url: 'https://ipapi.co/json/', parse: (d) => ({ lat: d.latitude, lng: d.longitude }) },
+    { url: 'https://ipwho.is/', parse: (d) => ({ lat: d.latitude, lng: d.longitude }) },
+    { url: 'https://ip-api.com/json/?fields=lat,lon', parse: (d) => ({ lat: d.lat, lng: d.lon }) },
+  ];
+  for (const api of apis) {
+    try {
+      const res = await fetch(api.url, { signal: AbortSignal.timeout(6000) });
+      if (!res.ok) continue;
+      const data = await res.json();
+      const pos = api.parse(data);
+      if (typeof pos.lat === 'number' && typeof pos.lng === 'number' && pos.lat !== 0) {
+        return pos;
+      }
+    } catch (_) { /* try next */ }
+  }
+  return null;
+}
+
 // Cumulative rotation tracking — avoids the 360°→0° full-spin problem
 let _dialRot = 0;
 let _partnerRot = 0;
@@ -3021,11 +3043,26 @@ function startCompass() {
         { enableHighAccuracy: false, maximumAge: 600000, timeout: 15000 }
       );
     }, 15000);
-    // Warn if still no fix after 20s
+    // Warn if still no fix after 20s — try IP geolocation as last resort
     setTimeout(() => {
       if (!gotFix) {
-        console.warn('[GPS] Still no fix after 20 s');
-        toast('GPS nicht verfügbar – geh nach draußen');
+        console.warn('[GPS] Still no fix after 20 s — trying IP geolocation');
+        toast('GPS nicht verfügbar – nutze IP-Ortung…');
+        // IP geolocation fallback: rough position (~1-50 km accuracy)
+        // but enough for compass direction over longer distances
+        fetchIPLocation().then(pos => {
+          if (pos && !gotFix) {
+            console.log('[GPS] IP geolocation fallback:', pos.lat.toFixed(3), pos.lng.toFixed(3));
+            state.myPos = pos;
+            if (state.conn && state.conn.open) {
+              try { state.conn.send({ type: 'pos', lat: pos.lat, lng: pos.lng }); } catch(_) {}
+            }
+            updateCompass();
+            toast('IP-Ortung aktiv (ungenau)');
+          }
+        }).catch(() => {
+          toast('Ortung fehlgeschlagen');
+        });
       }
     }, 20000);
     // Periodic position ping every 5s — ensures partner gets our position even if
