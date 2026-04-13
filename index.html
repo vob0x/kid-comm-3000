@@ -3267,6 +3267,24 @@ function stopCompass() {
 async function powerOn() {
   els.body.dataset.state = 'on';
   try { await initAudio(); } catch(e) { console.error(e); toast('Audio-Fehler'); return; }
+
+  // IMPORTANT: Request geolocation FIRST, before microphone.
+  // Firefox suppresses the second permission prompt if two come in quick succession.
+  // Geolocation is requested via a one-shot getCurrentPosition which triggers the
+  // permission dialog. We await it (with timeout) so the dialog is fully resolved
+  // before we request the microphone.
+  try {
+    await new Promise((resolve) => {
+      const timer = setTimeout(resolve, 4000); // don't block forever
+      navigator.geolocation.getCurrentPosition(
+        () => { clearTimeout(timer); resolve(); },
+        () => { clearTimeout(timer); resolve(); },
+        { enableHighAccuracy: false, maximumAge: Infinity, timeout: 3000 }
+      );
+    });
+    console.log('[GPS] Permission prompt resolved');
+  } catch(_) {}
+
   try {
     const s = await navigator.mediaDevices.getUserMedia({ audio: true });
     s.getTracks().forEach(t => t.stop()); // only for permission prompt
@@ -3279,10 +3297,9 @@ async function powerOn() {
   state._clockInterval = setInterval(updateClock, 1000);
   updateClock();
 
-  // Start compass with a delay — Firefox suppresses the geolocation permission
-  // prompt if it comes right after getUserMedia (mic). Delaying 2s lets the mic
-  // permission dialog settle, so Firefox shows the geolocation prompt properly.
-  setTimeout(() => { if (state.powered) startCompass(); }, 2000);
+  // Start compass — geolocation permission was already granted above,
+  // so startCompass() won't trigger a second prompt.
+  startCompass();
 
   // Fetch TURN credentials FIRST, then init peer.
   // This ensures TURN is available for the very first call (critical for WiFi↔Mobilfunk).
