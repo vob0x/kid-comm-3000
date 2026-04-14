@@ -2316,32 +2316,90 @@ function setupViz() {
 let ICE_SERVERS = [...BASE_ICE];
 let _turnFetchedAt = 0;
 
+/**
+ * Fetch dynamic Metered TURN credentials from any of the known endpoints.
+ * The account is optional — if it fails, BASE_ICE still contains the
+ * static OpenRelay TURN as a permanent public fallback, so WLAN↔cellular
+ * works either way. We try multiple API hosts because Metered has
+ * rotated domains over time (.live vs .ca, app-subdomain vs global).
+ */
 async function fetchTurnServers() {
   if (!TURN_CONFIG.app || !TURN_CONFIG.key) {
-    console.warn('[TURN] Kein Metered-API-Key → nur STUN');
+    console.log('[TURN] No Metered account configured — using BASE_ICE only');
     return [];
   }
-  const urls = [
-    'https://' + TURN_CONFIG.app + '.metered.live/api/v1/turn/credentials?apiKey=' + TURN_CONFIG.key,
-    'https://global.metered.live/api/v1/turn/credentials?apiKey=' + TURN_CONFIG.key,
+  const { app, key } = TURN_CONFIG;
+  const endpoints = [
+    `https://${app}.metered.ca/api/v1/turn/credentials?apiKey=${key}`,
+    `https://${app}.metered.live/api/v1/turn/credentials?apiKey=${key}`,
+    `https://global.metered.ca/api/v1/turn/credentials?apiKey=${key}`,
+    `https://global.metered.live/api/v1/turn/credentials?apiKey=${key}`,
   ];
-  for (const url of urls) {
+  for (const url of endpoints) {
     try {
-      console.log('[TURN] Trying:', url.substring(0, 60) + '…');
+      const host = new URL(url).hostname;
+      console.log('[TURN] Fetching from', host);
       const res = await fetch(url, { signal: AbortSignal.timeout(TIMING.turnFetchTimeout) });
-      if (!res.ok) { console.warn('[TURN] HTTP', res.status); continue; }
+      if (!res.ok) { console.warn('[TURN] HTTP', res.status, 'from', host); continue; }
       const servers = await res.json();
       if (Array.isArray(servers) && servers.length > 0) {
-        console.log('[TURN] Got', servers.length, 'TURN servers');
+        console.log('[TURN] Got', servers.length, 'Metered servers from', host);
         return servers;
       }
     } catch (e) {
-      console.warn('[TURN] Fetch failed:', url.split('?')[0], e.name || '', e.message || '');
+      console.warn('[TURN] Fetch failed:', e.name || '', e.message || '');
     }
   }
-  console.error('[TURN] All endpoints failed — STUN only');
-  toast('TURN nicht erreichbar – VPN aus?');
+  console.warn('[TURN] Metered unreachable — relying on BASE_ICE (OpenRelay)');
   return [];
+}
+
+/**
+ * Probe whether the current ICE_SERVERS yield any relay candidates on this
+ * network. Uses a throwaway RTCPeerConnection to gather candidates for up
+ * to `timeoutMs`, then returns:
+ *   { relay: true/false, types: Set<'host'|'srflx'|'relay'>, protocols: Set<'udp'|'tcp'> }
+ * A `relay: false` result means WLAN↔cellular will almost certainly fail
+ * on this network — the operator or carrier is blocking TURN, or the
+ * configured credentials are invalid.
+ */
+async function probeTurn(timeoutMs = 4000) {
+  const types = new Set();
+  const protocols = new Set();
+  let pc;
+  try {
+    pc = new RTCPeerConnection({ iceServers: ICE_SERVERS, iceCandidatePoolSize: 2 });
+  } catch (e) {
+    console.warn('[TURN] Probe RTCPeerConnection failed:', e.message);
+    return { relay: false, types, protocols };
+  }
+  // A data channel forces ICE gathering
+  try { pc.createDataChannel('probe'); } catch (_) {}
+
+  return new Promise((resolve) => {
+    const deadline = setTimeout(finish, timeoutMs);
+    pc.addEventListener('icecandidate', (ev) => {
+      if (!ev.candidate) { finish(); return; }
+      const c = ev.candidate;
+      if (c.type)     types.add(c.type);
+      if (c.protocol) protocols.add(c.protocol);
+      if (c.type === 'relay') finish(); // early exit: relay found
+    });
+    pc.createOffer()
+      .then((offer) => pc.setLocalDescription(offer))
+      .catch(() => finish());
+
+    function finish() {
+      clearTimeout(deadline);
+      try { pc.close(); } catch (_) {}
+      const result = { relay: types.has('relay'), types, protocols };
+      console.log('[TURN] Probe result —',
+        'types:', [...types].join(',') || '(none)',
+        '| protocols:', [...protocols].join(',') || '(none)',
+        '| relay:', result.relay ? 'YES' : 'NO');
+      resolve(result);
+    }
+  });
 }
 
 /**
@@ -3518,9 +3576,25 @@ document.addEventListener('resume', () => {
   }
 });
 
+/**
+ * Re-probe TURN after a network-class change (WiFi ↔ cellular). A relay
+ * candidate reachable on WiFi may be blocked on the carrier, and vice
+ * versa, so we refresh the SIG tag accordingly.
+ */
+function reprobeTurnAfterNetworkChange() {
+  probeTurn().then((probe) => {
+    if (!S.powered) return;
+    if (!probe.relay) {
+      toast('⚠ TURN blockiert – nur WLAN möglich');
+      dom.sigTag.textContent = 'NO TURN';
+    }
+  });
+}
+
 function onNetworkChange() {
   if (!S.powered) return;
   console.log('[NET] Network change detected');
+  reprobeTurnAfterNetworkChange();
   if (S.connected && S.call && S.call.peerConnection) {
     const pc = S.call.peerConnection;
     setTimeout(() => {
@@ -3537,6 +3611,7 @@ function onNetworkBack() {
   if (!S.powered) return;
   console.log('[NET] Back online');
   toast('Netzwerk zurück…');
+  reprobeTurnAfterNetworkChange();
   if (!S.connected && S.partnerId) scheduleReconnect(2000);
   if (S.peer && S.peer.disconnected) { try { S.peer.reconnect(); } catch(_) {} }
 }
@@ -3575,23 +3650,28 @@ async function powerOn() {
   startCompass();
 
   toast('TURN-Server laden…');
-  fetchTurnServers().then((turnServers) => {
+  (async () => {
+    const turnServers = await fetchTurnServers().catch(() => []);
     if (!S.powered) return;
     ICE_SERVERS = [...BASE_ICE, ...turnServers];
     _turnFetchedAt = Date.now();
-    console.log('[ICE] Total servers:', ICE_SERVERS.length);
-    if (turnServers.length === 0 && TURN_CONFIG.app && TURN_CONFIG.key) {
-      toast('TURN-Server nicht erreichbar');
-    } else if (turnServers.length > 0) {
-      toast('TURN bereit · Mobilfunk OK');
-    }
+    console.log('[ICE] Total servers:', ICE_SERVERS.length,
+      '(BASE:', BASE_ICE.length, '+ Metered:', turnServers.length, ')');
+    // Probe whether TURN is actually usable on this network.
+    // Runs in parallel with initPeer so it doesn't delay the peer ID.
     initPeer();
-  }).catch(() => {
+    const probe = await probeTurn();
     if (!S.powered) return;
-    _turnFetchedAt = Date.now();
-    toast('TURN-Fehler – nur WLAN');
-    initPeer();
-  });
+    if (probe.relay) {
+      toast(turnServers.length > 0
+        ? 'TURN bereit · Mobilfunk OK'
+        : 'TURN bereit (öffentlich)');
+    } else {
+      console.error('[TURN] No relay candidates on this network — WLAN↔Mobilfunk will fail');
+      toast('⚠ TURN blockiert – nur WLAN möglich');
+      dom.sigTag.textContent = 'NO TURN';
+    }
+  })();
 
   window.addEventListener('online', onNetworkBack);
   if (navigator.connection) navigator.connection.addEventListener('change', onNetworkChange);
