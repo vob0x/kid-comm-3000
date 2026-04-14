@@ -1137,6 +1137,27 @@ body[data-talk="off"] .talk-btn {
   height: 240px;
   display: block;
 }
+.qr-wait {
+  font-family: 'Orbitron', sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  color: #555;
+  text-align: center;
+  padding: 0 12px;
+  letter-spacing: 1px;
+}
+.qr-wait::after {
+  content: '';
+  display: block;
+  width: 36px;
+  height: 36px;
+  margin: 14px auto 0;
+  border: 3px solid #e2e2e2;
+  border-top-color: var(--primary);
+  border-radius: 50%;
+  animation: qrWaitSpin 0.9s linear infinite;
+}
+@keyframes qrWaitSpin { to { transform: rotate(360deg); } }
 #peerIdText {
   font-size: 10px;
   color: #666;
@@ -2703,22 +2724,20 @@ function bindCall(call) {
   }
 }
 
+/**
+ * Resolve when the peer has opened and S.myId is set, or the timeout elapses.
+ * Polls because the S.peer reference can be swapped mid-wait (e.g. the
+ * unavailable-id retry path destroys the old peer and creates a new one).
+ * A listener-based approach would get stuck on the destroyed peer.
+ */
 function waitForPeerOpen(timeoutMs = 6000) {
-  if (isPeerReady()) return Promise.resolve(true);
-  if (!S.peer) return Promise.resolve(false);
   return new Promise((resolve) => {
-    let done = false;
-    const onOpen  = () => finish(true);
-    const onError = () => finish(false);
-    const finish = (ok) => {
-      if (done) return; done = true;
-      S.peer.off('open', onOpen);
-      S.peer.off('error', onError);
-      resolve(ok);
-    };
-    S.peer.on('open',  onOpen);
-    S.peer.on('error', onError);
-    setTimeout(() => finish(false), timeoutMs);
+    const deadline = Date.now() + timeoutMs;
+    if (isPeerReady()) { resolve(true); return; }
+    const timer = setInterval(() => {
+      if (isPeerReady()) { clearInterval(timer); resolve(true); }
+      else if (Date.now() >= deadline) { clearInterval(timer); resolve(false); }
+    }, 200);
   });
 }
 
@@ -3063,17 +3082,39 @@ function sendSOS() {
   vibrate([100, 60, 100, 60, 100]);
 }
 
+/**
+ * Render the QR code modal. If the Peer hasn't opened yet (broker still
+ * handshaking, typical on first power-on), open the modal immediately
+ * with a "bitte warten" placeholder and draw the code as soon as S.myId
+ * is assigned. Prevents the "Noch nicht bereit" dead-end where the user
+ * has to tap the button again.
+ */
 function showMyQr() {
-  if (!S.myId) { toast('Noch nicht bereit'); return; }
+  dom.qrModal.classList.remove('hidden');
+  if (S.myId) {
+    renderMyQr();
+    return;
+  }
+  dom.peerIdText.textContent = 'verbindet…';
+  dom.qrHolder.innerHTML = '<div class="qr-wait">Funkgerät verbindet sich…</div>';
+  waitForPeerOpen(15000).then((ok) => {
+    if (!dom.qrModal.classList.contains('hidden') && ok && S.myId) renderMyQr();
+    else if (!ok) {
+      dom.qrHolder.innerHTML = '<div class="qr-wait">Keine Verbindung zum Signalserver.<br>Erneut versuchen.</div>';
+    }
+  });
+}
+
+function renderMyQr() {
   dom.peerIdText.textContent = S.myId;
   try {
     const qr = qrcode(0, 'M');
     qr.addData(S.myId);
     qr.make();
     dom.qrHolder.innerHTML = qr.createSvgTag({ scalable: true, margin: 2 });
-    dom.qrModal.classList.remove('hidden');
   } catch (e) {
-    console.error(e); toast('QR-Fehler: ' + e.message);
+    console.error(e);
+    dom.qrHolder.innerHTML = '<div class="qr-wait">QR-Fehler: ' + (e.message || e) + '</div>';
   }
 }
 
@@ -3649,17 +3690,25 @@ async function powerOn() {
   updateClock();
   startCompass();
 
-  toast('TURN-Server laden…');
+  // Create the peer IMMEDIATELY with BASE_ICE (includes OpenRelay TURN).
+  // This gets us an ID within ~1s so QR / scan / last-partner auto-connect
+  // work without waiting for the Metered fetch. Metered credentials arrive
+  // asynchronously and trigger a peer reinit only if they actually change
+  // the iceServers (refreshTurnIfNeeded -> fullPeerReinit path).
+  initPeer();
+
+  // In the background: enrich ICE_SERVERS with Metered credentials and
+  // probe whether any relay candidate is reachable on this network.
   (async () => {
     const turnServers = await fetchTurnServers().catch(() => []);
     if (!S.powered) return;
-    ICE_SERVERS = [...BASE_ICE, ...turnServers];
+    if (turnServers.length > 0) {
+      ICE_SERVERS = [...BASE_ICE, ...turnServers];
+      console.log('[ICE] Total servers:', ICE_SERVERS.length,
+        '(BASE:', BASE_ICE.length, '+ Metered:', turnServers.length, ')');
+    }
     _turnFetchedAt = Date.now();
-    console.log('[ICE] Total servers:', ICE_SERVERS.length,
-      '(BASE:', BASE_ICE.length, '+ Metered:', turnServers.length, ')');
-    // Probe whether TURN is actually usable on this network.
-    // Runs in parallel with initPeer so it doesn't delay the peer ID.
-    initPeer();
+
     const probe = await probeTurn();
     if (!S.powered) return;
     if (probe.relay) {
