@@ -1141,27 +1141,6 @@ body[data-talk="off"] .talk-btn {
   height: 240px;
   display: block;
 }
-.qr-wait {
-  font-family: 'Orbitron', sans-serif;
-  font-size: 14px;
-  line-height: 1.5;
-  color: #555;
-  text-align: center;
-  padding: 0 12px;
-  letter-spacing: 1px;
-}
-.qr-wait::after {
-  content: '';
-  display: block;
-  width: 36px;
-  height: 36px;
-  margin: 14px auto 0;
-  border: 3px solid #e2e2e2;
-  border-top-color: var(--primary);
-  border-radius: 50%;
-  animation: qrWaitSpin 0.9s linear infinite;
-}
-@keyframes qrWaitSpin { to { transform: rotate(360deg); } }
 #peerIdText {
   font-size: 10px;
   color: #666;
@@ -3082,67 +3061,39 @@ function sendSOS() {
 }
 
 /**
- * Render the QR code modal. The peer ID is persistent across sessions
- * (stored in localStorage), so after the first power-on we can render the
- * QR immediately — no spinner, no waiting. The peer handshake just
- * re-claims the same ID in the background.
+ * Show the QR-code modal. Linear and synchronous — exactly V1's proven
+ * pattern with one extra: fall back to the persistent localStorage ID
+ * if S.myId hasn't been assigned yet (happens right after power-on
+ * while the PeerJS broker is still handshaking). The broker always
+ * re-claims the same saved ID, so the cached value is the partner-
+ * scannable code either way.
  *
- * Flow:
- *   - Cached ID in localStorage → render QR instantly. If the broker
- *     later assigns a different ID (rare unavailable-id path), re-render.
- *   - No cached ID (first ever launch) → spinner until peer opens, then
- *     render. If the broker is unreachable within 15 s, show the retry
- *     hint so the modal isn't a dead end.
+ * No async spinner, no parallel waitForPeerOpen — those produced a
+ * failure mode where the modal could open with the initial HTML still
+ * showing (peerIdText = "—", qrHolder empty) if any step threw.
  */
 function showMyQr() {
-  dom.qrModal.classList.remove('hidden');
-  const cachedId = S.myId || store.get(STORAGE_KEYS.myId);
-
-  if (cachedId) {
-    renderMyQr(cachedId);
-    // Peer may still be handshaking. If it ends up with a different ID
-    // than the cache (unavailable-id path assigns a temp suffix), update
-    // the QR once we know the real live ID.
-    if (!S.myId || S.myId !== cachedId) {
-      waitForPeerOpen(15000).then(() => {
-        if (dom.qrModal.classList.contains('hidden')) return;
-        if (S.myId && S.myId !== cachedId) renderMyQr(S.myId);
-      });
-    }
+  const id = S.myId || store.get(STORAGE_KEYS.myId);
+  if (!id) {
+    toast('Funkgerät verbindet sich — bitte kurz warten');
     return;
   }
-
-  // First-ever launch — no cached ID yet. Wait for the broker.
-  dom.peerIdText.textContent = 'verbindet…';
-  dom.qrHolder.innerHTML = '<div class="qr-wait">Funkgerät verbindet sich…</div>';
-  waitForPeerOpen(15000).then((ok) => {
-    if (dom.qrModal.classList.contains('hidden')) return;
-    if (ok && S.myId) renderMyQr(S.myId);
-    else dom.qrHolder.innerHTML = '<div class="qr-wait">Keine Verbindung zum Signalserver.<br>Erneut versuchen.</div>';
-  });
-}
-
-/**
- * Render the QR code as a scalable SVG — the same approach V1 used and
- * that is proven to work. The CSS rule on #qrHolder svg supplies the
- * explicit width/height that a scalable SVG lacks intrinsically.
- */
-function renderMyQr(id) {
-  dom.peerIdText.textContent = id;
   if (typeof qrcode !== 'function') {
-    console.error('[Peer] qrcode library not loaded — cannot render QR');
-    dom.qrHolder.innerHTML = '<div class="qr-wait">QR-Bibliothek nicht geladen.<br>Seite neu laden.</div>';
+    console.error('[Peer] qrcode library not loaded');
+    toast('QR-Bibliothek nicht geladen – Seite neu laden');
     return;
   }
   try {
-    const qr = qrcode(0, 'M');         // auto-size, medium error correction
+    const qr = qrcode(0, 'M');
     qr.addData(String(id));
     qr.make();
+    dom.peerIdText.textContent = id;
     dom.qrHolder.innerHTML = qr.createSvgTag({ scalable: true, margin: 2 });
+    dom.qrModal.classList.remove('hidden');
     console.log('[Peer] QR rendered for', id, '—', qr.getModuleCount() + 'x' + qr.getModuleCount(), 'modules');
   } catch (e) {
-    console.error('[Peer] QR render failed:', e.message);
-    dom.qrHolder.innerHTML = '<div class="qr-wait">QR-Fehler: ' + (e.message || e) + '</div>';
+    console.error('[Peer] QR render failed:', e && e.message);
+    toast('QR-Fehler: ' + (e && e.message || e));
   }
 }
 
