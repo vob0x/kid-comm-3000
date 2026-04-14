@@ -5,3 +5,6 @@ node_modules/
 .vscode/
 .idea/
 *.swp
+
+# Local fallback copies of V1 / V2 — history is in git, keep workspace clean
+archive/

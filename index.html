@@ -3083,33 +3083,51 @@ function sendSOS() {
 }
 
 /**
- * Render the QR code modal. If the Peer hasn't opened yet (broker still
- * handshaking, typical on first power-on), open the modal immediately
- * with a "bitte warten" placeholder and draw the code as soon as S.myId
- * is assigned. Prevents the "Noch nicht bereit" dead-end where the user
- * has to tap the button again.
+ * Render the QR code modal. The peer ID is persistent across sessions
+ * (stored in localStorage), so after the first power-on we can render the
+ * QR immediately — no spinner, no waiting. The peer handshake just
+ * re-claims the same ID in the background.
+ *
+ * Flow:
+ *   - Cached ID in localStorage → render QR instantly. If the broker
+ *     later assigns a different ID (rare unavailable-id path), re-render.
+ *   - No cached ID (first ever launch) → spinner until peer opens, then
+ *     render. If the broker is unreachable within 15 s, show the retry
+ *     hint so the modal isn't a dead end.
  */
 function showMyQr() {
   dom.qrModal.classList.remove('hidden');
-  if (S.myId) {
-    renderMyQr();
+  const cachedId = S.myId || store.get(STORAGE_KEYS.myId);
+
+  if (cachedId) {
+    renderMyQr(cachedId);
+    // Peer may still be handshaking. If it ends up with a different ID
+    // than the cache (unavailable-id path assigns a temp suffix), update
+    // the QR once we know the real live ID.
+    if (!S.myId || S.myId !== cachedId) {
+      waitForPeerOpen(15000).then(() => {
+        if (dom.qrModal.classList.contains('hidden')) return;
+        if (S.myId && S.myId !== cachedId) renderMyQr(S.myId);
+      });
+    }
     return;
   }
+
+  // First-ever launch — no cached ID yet. Wait for the broker.
   dom.peerIdText.textContent = 'verbindet…';
   dom.qrHolder.innerHTML = '<div class="qr-wait">Funkgerät verbindet sich…</div>';
   waitForPeerOpen(15000).then((ok) => {
-    if (!dom.qrModal.classList.contains('hidden') && ok && S.myId) renderMyQr();
-    else if (!ok) {
-      dom.qrHolder.innerHTML = '<div class="qr-wait">Keine Verbindung zum Signalserver.<br>Erneut versuchen.</div>';
-    }
+    if (dom.qrModal.classList.contains('hidden')) return;
+    if (ok && S.myId) renderMyQr(S.myId);
+    else dom.qrHolder.innerHTML = '<div class="qr-wait">Keine Verbindung zum Signalserver.<br>Erneut versuchen.</div>';
   });
 }
 
-function renderMyQr() {
-  dom.peerIdText.textContent = S.myId;
+function renderMyQr(id) {
+  dom.peerIdText.textContent = id;
   try {
     const qr = qrcode(0, 'M');
-    qr.addData(S.myId);
+    qr.addData(id);
     qr.make();
     dom.qrHolder.innerHTML = qr.createSvgTag({ scalable: true, margin: 2 });
   } catch (e) {
