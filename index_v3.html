@@ -2285,20 +2285,25 @@ function bindPeerEvents(peer) {
   peer.on('error', (err) => {
     console.error('peer err', err);
     if (err.type === 'unavailable-id') {
+      // V3 FIX: After background/sleep, broker holds our old session for 30-60s.
+      // Retry patiently up to 10 times (~90s total) before fallback to temp ID.
+      // Using a temp ID breaks auto-reconnect because the partner can't find us.
       _unavailableIdRetries++;
       try { peer.destroy(); } catch(_) {}
       if (S.peer === peer) S.peer = null;
-      if (_unavailableIdRetries <= 3) {
-        const delay = _unavailableIdRetries * 1000;
-        console.log('[Peer] ID unavailable, retry', _unavailableIdRetries, 'in', delay, 'ms');
-        toast('Verbinde…');
+      if (_unavailableIdRetries <= 10) {
+        // Exponential-ish backoff: 2s, 4s, 6s, 8s, 10s, 12s, 14s, 16s, 18s, 20s
+        const delay = Math.min(_unavailableIdRetries * 2000, 20000);
+        console.log('[Peer] ID unavailable, retry', _unavailableIdRetries, '/10 in', delay, 'ms');
+        if (_unavailableIdRetries === 1) toast('Signal neu aufbauen…');
+        else if (_unavailableIdRetries === 5) toast('Warte auf Broker-Freigabe…');
         _usingTempId = false;
-        setTimeout(() => initPeer(false), delay);
+        setTimeout(() => { if (S.powered) initPeer(false); }, delay);
       } else {
         const baseId = store.get(STORAGE_KEYS.myId);
         const tempId = baseId ? baseId + '-' + Date.now().toString(36).slice(-4) : null;
-        console.warn('[Peer] Using temp ID:', tempId);
-        toast('Verbinde mit neuem Signal…');
+        console.warn('[Peer] Using temp ID after 10 retries:', tempId);
+        toast('Temporäres Signal – Partner muss erneut scannen');
         _usingTempId = true;
         S.peer = new Peer(tempId || undefined, { debug: 1, config: { iceServers: ICE_SERVERS } });
         _unavailableIdRetries = 0;
@@ -3216,6 +3221,67 @@ function releaseAllKeepAlives() { releaseWakeLock(); releaseWebLock(); stopAudio
 
 let _wentHiddenAt = 0;
 
+// V3 FIX: Unified resume handler — clear precedence, no racing reconnects.
+// After fullPeerReinit the 'open' handler auto-connects via autoConnectTried
+// reset in initPeer(). We only schedule an explicit reconnect if that fails.
+async function resumeFromBackground(hiddenMs) {
+  // Resume AudioContext (browsers may suspend despite keep-alive)
+  if (S.ctx && S.ctx.state === 'suspended') {
+    S.ctx.resume().then(() => console.log('[Audio] Context resumed'));
+  }
+  if (S.connected || S.partnerId) acquireAllKeepAlives();
+
+  // Case A: Still connected — verify ICE health
+  if (S.connected && S.call && S.call.peerConnection) {
+    const pc = S.call.peerConnection;
+    const iceState = pc.iceConnectionState;
+    console.log('[Visibility] ICE state after resume:', iceState);
+    if (iceState === 'failed' || iceState === 'closed') {
+      toast('Verbindung verloren – verbinde neu…');
+      teardownAndReconnect();
+    } else if (iceState === 'disconnected') {
+      toast('Verbindung prüfen…');
+      setTimeout(() => {
+        if (S.call && S.call.peerConnection &&
+            S.call.peerConnection.iceConnectionState !== 'connected' &&
+            S.call.peerConnection.iceConnectionState !== 'completed') {
+          teardownAndReconnect();
+        }
+      }, 3000);
+    }
+    return;
+  }
+
+  // Case B: Not connected but have partner — reconnect
+  if (!S.partnerId) return;
+
+  console.log('[Visibility] Resume with partner saved, hidden', Math.round(hiddenMs / 1000), 's');
+  toast('Verbinde neu…');
+
+  // Close any stale connections first
+  stopHeartbeat();
+  if (S.call) { try { S.call.close(); } catch(_) {} S.call = null; }
+  if (S.conn) { try { S.conn.close(); } catch(_) {} S.conn = null; }
+  S.connected = false;
+  setConn('ready'); setTalk('off');
+
+  // Short sleep + peer still alive → just reconnect
+  if (hiddenMs < 5000 && S.peer && !S.peer.disconnected && !S.peer.destroyed) {
+    await refreshTurnIfNeeded();
+    scheduleReconnect(500);
+    return;
+  }
+
+  // Everything else → full reinit. The 'open' handler will auto-connect
+  // via autoConnectTried reset. If peer fails to open, fall back.
+  const opened = await fullPeerReinit();
+  if (!opened) {
+    console.warn('[Visibility] Peer did not open — fallback scheduleReconnect');
+    scheduleReconnect(2000);
+  }
+  // else: 'open' handler will auto-connect to S.partnerId within ~800ms
+}
+
 document.addEventListener('visibilitychange', () => {
   if (!S.powered) return;
   if (document.hidden) {
@@ -3226,55 +3292,7 @@ document.addEventListener('visibilitychange', () => {
   } else {
     const hiddenMs = Date.now() - _wentHiddenAt;
     console.log('[Visibility] Visible again after', Math.round(hiddenMs / 1000), 's');
-
-    if (S.ctx && S.ctx.state === 'suspended') {
-      S.ctx.resume().then(() => console.log('[Audio] Context resumed'));
-    }
-    if (S.connected || S.partnerId) acquireAllKeepAlives();
-
-    if (hiddenMs > 30000 && S.partnerId) {
-      console.log('[Visibility] Long sleep — assume dead, full reinit');
-      toast('Verbinde neu nach Ruhemodus…');
-      stopHeartbeat();
-      if (S.call) { try { S.call.close(); } catch(_) {} }
-      if (S.conn) { try { S.conn.close(); } catch(_) {} }
-      S.call = null; S.conn = null; S.connected = false;
-      setConn('ready'); setTalk('off');
-      fullPeerReinit().then(() => {
-        if (S.partnerId && !S.connected) scheduleReconnect(300);
-      });
-    } else if (S.connected && S.call && S.call.peerConnection) {
-      const pc = S.call.peerConnection;
-      const iceState = pc.iceConnectionState;
-      console.log('[Visibility] ICE state after resume:', iceState);
-      if (iceState === 'failed' || iceState === 'closed') {
-        toast('Verbindung verloren – verbinde neu…');
-        teardownAndReconnect();
-      } else if (iceState === 'disconnected') {
-        toast('Verbindung prüfen…');
-        setTimeout(() => {
-          if (S.call && S.call.peerConnection &&
-              S.call.peerConnection.iceConnectionState !== 'connected' &&
-              S.call.peerConnection.iceConnectionState !== 'completed') {
-            teardownAndReconnect();
-          }
-        }, 3000);
-      }
-    } else if (!S.connected && S.partnerId) {
-      console.log('[Visibility] Not connected after resume');
-      toast('Verbinde neu…');
-      if (hiddenMs > 5000) {
-        fullPeerReinit().then(() => {
-          if (S.partnerId && !S.connected) scheduleReconnect(300);
-        });
-      } else if (S.peer && (S.peer.disconnected || S.peer.destroyed)) {
-        initPeer();
-        setTimeout(() => scheduleReconnect(500), 1500);
-      } else {
-        refreshTurnIfNeeded();
-        scheduleReconnect(500);
-      }
-    }
+    resumeFromBackground(hiddenMs);
   }
 });
 
