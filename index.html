@@ -3125,11 +3125,20 @@ function showMyQr() {
 
 function renderMyQr(id) {
   dom.peerIdText.textContent = id;
+  if (typeof qrcode !== 'function') {
+    dom.qrHolder.innerHTML = '<div class="qr-wait">QR-Bibliothek nicht geladen.<br>Seite neu laden.</div>';
+    return;
+  }
   try {
     const qr = qrcode(0, 'M');
     qr.addData(id);
     qr.make();
-    dom.qrHolder.innerHTML = qr.createSvgTag({ scalable: true, margin: 2 });
+    // createImgTag returns a data-URL PNG <img> with explicit pixel
+    // dimensions baked in — renders identically in every browser, no
+    // dependence on CSS sizing inside flex containers. Cell size 6px
+    // × (typical 29 cells + 4 margin) ≈ 222 px which matches the 240 px
+    // #qrHolder svg/img rule with room to breathe.
+    dom.qrHolder.innerHTML = qr.createImgTag(6, 4);
   } catch (e) {
     console.error(e);
     dom.qrHolder.innerHTML = '<div class="qr-wait">QR-Fehler: ' + (e.message || e) + '</div>';
