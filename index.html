@@ -1959,31 +1959,26 @@ const BEEPS = {
     playTone(500, 0.22, 0.20, 'sawtooth', 0.32);
   },
   /**
-   * SBB station chime. Three motifs on the acronyms SBB-CFF-FFS:
-   *   Es-B-B   C-F-F   F-F-Es
-   * (Es = Eb, B = Bb in German notation.) Played on a vibraphone
-   * voice: sine fundamental + small detuned partial, slight tremolo,
-   * bell-like exponential decay.
+   * SBB station chime. The classic three-note "S-B-B" vibraphone gong
+   * that precedes every station announcement in der Schweiz. Played
+   * with a sine fundamental, slightly detuned octave partial, 6 Hz
+   * tremolo motor and bell-like exponential decay — see playSbbNote.
    */
   sbbChime() { playSbbVibraphone(SBB_CHIME_NOTES); },
 };
 
-/** Equal-tempered pitches (A4=440) used for the SBB chime. */
-const SBB_NOTES = Object.freeze({
-  Eb4: 311.13, Bb4: 466.16, C5: 523.25, F4: 349.23, F5: 698.46, Eb5: 622.25,
-});
-
-/** The canonical "Es-B-B / C-F-F / F-F-Es" sequence, timed like the real chime. */
+/**
+ * The canonical chime. Pitches in equal temperament (A4=440). Timing
+ * mimics the station PA cadence: two equal-length strikes, then a
+ * sustained B+Ges doublestrike — both notes share start time and
+ * duration so playSbbVibraphone schedules them as one chord on the
+ * shared AudioContext timeline.
+ */
 const SBB_CHIME_NOTES = Object.freeze([
-  { f: SBB_NOTES.Eb4, t: 0.00, d: 0.55 },  // Es
-  { f: SBB_NOTES.Bb4, t: 0.32, d: 0.55 },  // B
-  { f: SBB_NOTES.Bb4, t: 0.64, d: 0.65 },  // B
-  { f: SBB_NOTES.C5,  t: 1.10, d: 0.55 },  // C
-  { f: SBB_NOTES.F4,  t: 1.42, d: 0.55 },  // F
-  { f: SBB_NOTES.F4,  t: 1.74, d: 0.65 },  // F
-  { f: SBB_NOTES.F5,  t: 2.20, d: 0.55 },  // F
-  { f: SBB_NOTES.F5,  t: 2.52, d: 0.55 },  // F
-  { f: SBB_NOTES.Eb5, t: 2.84, d: 0.95 },  // Es (final, longer sustain)
+  { f: 311.13, t: 0.00, d: 0.55 },  // S → Es (Eb4)
+  { f: 466.16, t: 0.40, d: 0.55 },  // B → B  (Bb4)
+  { f: 466.16, t: 0.80, d: 1.00 },  // B → B  (Bb4, sustained)
+  { f: 369.99, t: 0.80, d: 1.00 },  // + Ges (Gb4, doublestrike chord)
 ]);
 
 /**
