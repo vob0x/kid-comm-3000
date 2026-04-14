@@ -127,6 +127,19 @@ body[data-mode="geheim"] {
   --text: #d5ffe5;
   --text-dim: #5a9a78;
 }
+/* ---------- THEME: BAHNHOF (SBB red/white) ---------- */
+body[data-mode="bahnhof"] {
+  --primary: #eb0000;              /* SBB red */
+  --primary-glow: rgba(235, 0, 0, 0.75);
+  --accent: #ffffff;
+  --accent-glow: rgba(255, 255, 255, 0.6);
+  --bg-deep: #1a0606;
+  --bg-mid: #300b0b;
+  --surface: rgba(40, 10, 10, 0.7);
+  --surface-border: rgba(235, 0, 0, 0.5);
+  --text: #ffe9e9;
+  --text-dim: #c58585;
+}
 
 /* ============================================================
    BACKGROUND LAYER (mode-specific scenes)
@@ -146,6 +159,7 @@ body[data-mode="rettung"]   .bg-rettung   { display: block; }
 body[data-mode="astronaut"] .bg-astronaut { display: block; }
 body[data-mode="pilot"]     .bg-pilot     { display: block; }
 body[data-mode="geheim"]    .bg-geheim    { display: block; }
+body[data-mode="bahnhof"]   .bg-bahnhof   { display: block; }
 
 /* ---- POLIZEI bg: alternating strobes ---- */
 .strobe {
@@ -411,6 +425,59 @@ body[data-mode="geheim"]    .bg-geheim    { display: block; }
 @keyframes classifiedPulse {
   0%, 100% { opacity: 0.15; }
   50% { opacity: 0.35; }
+}
+
+/* ---- BAHNHOF bg: station platform with moving rails ---- */
+.bg-bahnhof::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(180deg, #1a0606 0%, #300b0b 45%, #1a0606 55%, #0a0303 100%),
+    repeating-linear-gradient(90deg,
+      transparent 0, transparent 60px,
+      rgba(235, 0, 0, 0.08) 60px, rgba(235, 0, 0, 0.08) 62px);
+}
+.sbb-rails {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 20%;
+  height: 12px;
+  background: repeating-linear-gradient(90deg,
+    transparent 0, transparent 30px,
+    rgba(255, 255, 255, 0.25) 30px, rgba(255, 255, 255, 0.25) 60px);
+  animation: sbbRails 1.2s linear infinite;
+  opacity: 0.7;
+}
+@keyframes sbbRails {
+  from { background-position: 0 0; }
+  to   { background-position: -60px 0; }
+}
+.sbb-platform {
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  height: 20%;
+  background: linear-gradient(180deg, rgba(50, 15, 15, 0.9) 0%, rgba(20, 5, 5, 1) 100%);
+  border-top: 3px solid rgba(235, 0, 0, 0.6);
+  box-shadow: 0 -8px 20px rgba(235, 0, 0, 0.25);
+}
+.sbb-sign {
+  position: absolute;
+  top: 10%;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #eb0000;
+  color: #fff;
+  font-family: 'Orbitron', sans-serif;
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  padding: 6px 16px;
+  border-radius: 6px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5);
+  opacity: 0.85;
+  pointer-events: none;
 }
 
 /* ============================================================
@@ -1248,6 +1315,11 @@ body[data-state="on"] .power-btn {
     <div class="radar-sweep"></div>
     <div class="classified">CLASSIFIED</div>
   </div>
+  <div class="bg-layer bg-bahnhof">
+    <div class="sbb-sign">GLEIS 7</div>
+    <div class="sbb-rails"></div>
+    <div class="sbb-platform"></div>
+  </div>
 </div>
 
 <!-- HUD -->
@@ -1403,14 +1475,16 @@ body[data-state="on"] .power-btn {
    §1  CONFIGURATION & CONSTANTS
    ──────────────────────────────────────────────────────────── */
 
-/** The six themed walkie-talkie modes */
+/** The themed walkie-talkie modes */
 const MODES = Object.freeze([
   { id: 'polizei',   name: 'POLIZEI',     icon: '🚓', beep: 'policeSiren',  audio: { freq: 1800, q: 1.2, noise: 0.020, dist: 3.2, highpass: 400 } },
-  { id: 'feuerwehr', name: 'FEUERWEHR',   icon: '🚒', beep: 'airHorn',     audio: { freq: 1100, q: 0.8, noise: 0.030, dist: 4.2, highpass: 300 } },
-  { id: 'rettung',   name: 'RETTUNG',     icon: '🚑', beep: 'ambulance',   audio: { freq: 1600, q: 0.9, noise: 0.015, dist: 2.5, highpass: 400 } },
-  { id: 'astronaut', name: 'ASTRONAUT',   icon: '🚀', beep: 'spaceSweep',  audio: { freq: 2000, q: 1.4, noise: 0.010, dist: 2.0, highpass: 600 } },
+  { id: 'feuerwehr', name: 'FEUERWEHR',   icon: '🚒', beep: 'airHorn',      audio: { freq: 1100, q: 0.8, noise: 0.030, dist: 4.2, highpass: 300 } },
+  { id: 'rettung',   name: 'RETTUNG',     icon: '🚑', beep: 'ambulance',    audio: { freq: 1600, q: 0.9, noise: 0.015, dist: 2.5, highpass: 400 } },
+  { id: 'astronaut', name: 'ASTRONAUT',   icon: '🚀', beep: 'spaceSweep',   audio: { freq: 2000, q: 1.4, noise: 0.010, dist: 2.0, highpass: 600 } },
   { id: 'pilot',     name: 'PILOT',       icon: '✈️', beep: 'cockpitChime', audio: { freq: 1600, q: 1.0, noise: 0.012, dist: 2.0, highpass: 400 } },
-  { id: 'geheim',    name: 'GEHEIMAGENT', icon: '🕵️', beep: 'spyLock',     audio: { freq: 1400, q: 1.2, noise: 0.009, dist: 2.2, highpass: 500 } },
+  { id: 'geheim',    name: 'GEHEIMAGENT', icon: '🕵️', beep: 'spyLock',      audio: { freq: 1400, q: 1.2, noise: 0.009, dist: 2.2, highpass: 500 } },
+  // Classic station PA: narrow mid-band, light distortion, airy tail
+  { id: 'bahnhof',   name: 'BAHNHOF',     icon: '🚉', beep: 'sbbChime',     audio: { freq: 1400, q: 1.5, noise: 0.006, dist: 1.8, highpass: 500 } },
 ]);
 
 /** Voice effects applied to outgoing audio */
@@ -1422,25 +1496,33 @@ const EFFECTS = Object.freeze([
   { name: 'ALIEN',   icon: '👽' },
 ]);
 
-/** Metered.ca TURN credentials */
+/** Metered.ca TURN credentials (primary, dynamic, ~20 GB/month free). */
 const TURN_CONFIG = Object.freeze({
   app: 'kidcomm3000',
   key: '2b1eb045790c6ef8269fa5ea5e137da9ada9',
-  maxAge: 10 * 60 * 1000,        // refresh every 10 min
-  urls: [
-    'https://kidcomm3000.metered.live/api/v1/turn/credentials?apiKey=2b1eb045790c6ef8269fa5ea5e137da9ada9',
-    'https://global.metered.live/api/v1/turn/credentials?apiKey=2b1eb045790c6ef8269fa5ea5e137da9ada9',
-  ],
 });
 
-/** Fallback STUN servers (always free, always available) */
+/**
+ * Baseline ICE servers — always present regardless of network state:
+ *   • Public STUN (for reflexive candidates)
+ *   • Open Relay Project TURN (free public relay, covers CGNAT and
+ *     WiFi↔cellular handover when the Metered account is unavailable).
+ * The Metered dynamic TURN servers are appended on top of this baseline.
+ */
 const BASE_ICE = Object.freeze([
   { urls: 'stun:stun.l.google.com:19302' },
   { urls: 'stun:stun1.l.google.com:19302' },
-  { urls: 'stun:stun2.l.google.com:19302' },
-  { urls: 'stun:stun3.l.google.com:19302' },
-  { urls: 'stun:stun4.l.google.com:19302' },
   { urls: 'stun:stun.cloudflare.com:3478' },
+  {
+    urls: [
+      'turn:openrelay.metered.ca:80',
+      'turn:openrelay.metered.ca:443',
+      'turn:openrelay.metered.ca:443?transport=tcp',
+      'turns:openrelay.metered.ca:443',
+    ],
+    username: 'openrelayproject',
+    credential: 'openrelayproject',
+  },
 ]);
 
 /** localStorage keys (compatible with V1/V2) */
@@ -1485,17 +1567,25 @@ const TIMING = Object.freeze({
    §2  APPLICATION STATE
    ──────────────────────────────────────────────────────────── */
 
+/**
+ * Runtime application state. Holds only values the UI / radio protocol
+ * actually branches on. Internal timers, single-purpose refs and private
+ * bookkeeping live as module-level `let`s near the function that owns
+ * them — declaring them here as well would be a lie about what's in S.
+ *
+ * Naming: leading underscore marks internal implementation refs
+ * (timers, pending node lists, cached handlers) that the rest of the
+ * code should not inspect directly.
+ */
 const S = {
   // Power
   powered: false,
-  powering: false,          // guard against double power-on/off
 
   // Mode & effects
   mode: 0,
   effect: 0,
-  lastModeChange: 0,
 
-  // PeerJS
+  // PeerJS connection
   peer: null,
   myId: null,
   partnerId: null,
@@ -1505,77 +1595,43 @@ const S = {
   connected: false,
   transmitting: false,
 
-  // Audio
+  // Audio graph
   ctx: null,                // AudioContext
   rawStream: null,          // raw mic MediaStream
   outStream: null,          // processed outgoing MediaStream
   outMute: null,            // GainNode for tap-to-talk
   effectChain: null,        // { input, mute, output, nodes[] }
-  staticGain: null,         // pink noise gain
+  staticGain: null,         // pink-noise gain
   rxFilter: null,           // incoming bandpass
   rxDistortion: null,       // incoming waveshaper
   rxAnalyser: null,         // incoming FFT
   txAnalyser: null,         // outgoing FFT
-  rxNodes: null,            // array of all RX chain nodes
   remoteStream: null,
   remoteAudioEl: null,
+  _rxNodes: null,           // all nodes in the RX chain (for tear-down)
 
   // Scanner
   scanner: null,
 
-  // Compass & geolocation
+  // Geolocation & compass
   myPos: null,
   partnerPos: null,
   heading: null,
-  posIsIPBased: false,
-  partnerPosIsIPBased: false,
-  geoWatchHigh: null,
-  geoWatchLow: null,
-  geoRetryInterval: null,
-  posInterval: null,
-  compassSensor: null,
-  compassListeners: null,
+  geoWatchId: null,         // high-accuracy watch handle
+  _geoWatchLow: null,       // low-accuracy watch handle
+  _geoRetryInterval: null,
+  _posInterval: null,
+  _posIsIPBased: false,
+  _partnerPosIsIPBased: false,
+  _compassSensor: null,
+  _compassListeners: null,  // { onAbsolute, onEvent } for cleanup
 
   // Timers & animation
-  clockInterval: null,
-  vizRafId: null,
-  vizResizeHandler: null,
-  stabilityTimer: null,
-  safetyTimeout: null,
-
-  // Reconnection
-  reconnectTimer: null,
-  reconnectAttempt: 0,
-  isReconnecting: false,
-  lastTeardownTime: 0,
-  teardownCount: 0,
-
-  // Heartbeat
-  heartbeatInterval: null,
-  lastPong: 0,
-
-  // Keep-alive
-  wakeLock: null,
-  webLockController: null,
-  keepAliveOsc: null,
-  keepAliveGain: null,
-
-  // PeerJS broker
-  usingTempId: false,
-  unavailableIdRetries: 0,
-  brokerReconnectTimer: null,
-  lastBrokerDisconnect: 0,
-
-  // ICE
-  iceServers: [...BASE_ICE],
-  turnFetchedAt: 0,
-
-  // Visibility
-  wentHiddenAt: 0,
-
-  // Compass rotation tracking
-  dialRot: 0,
-  partnerRot: 0,
+  _clockInterval: null,
+  _vizRafId: null,
+  _vizResizeHandler: null,
+  _stabilityTimer: null,
+  _safetyTimeout: null,
 };
 
 /* ────────────────────────────────────────────────────────────
@@ -1879,7 +1935,83 @@ const BEEPS = {
     playTone(900, 0.18, 0.18, 'sawtooth', 0.26);
     playTone(500, 0.22, 0.20, 'sawtooth', 0.32);
   },
+  /**
+   * SBB station chime. Three motifs on the acronyms SBB-CFF-FFS:
+   *   Es-B-B   C-F-F   F-F-Es
+   * (Es = Eb, B = Bb in German notation.) Played on a vibraphone
+   * voice: sine fundamental + small detuned partial, slight tremolo,
+   * bell-like exponential decay.
+   */
+  sbbChime() { playSbbVibraphone(SBB_CHIME_NOTES); },
 };
+
+/** Equal-tempered pitches (A4=440) used for the SBB chime. */
+const SBB_NOTES = Object.freeze({
+  Eb4: 311.13, Bb4: 466.16, C5: 523.25, F4: 349.23, F5: 698.46, Eb5: 622.25,
+});
+
+/** The canonical "Es-B-B / C-F-F / F-F-Es" sequence, timed like the real chime. */
+const SBB_CHIME_NOTES = Object.freeze([
+  { f: SBB_NOTES.Eb4, t: 0.00, d: 0.55 },  // Es
+  { f: SBB_NOTES.Bb4, t: 0.32, d: 0.55 },  // B
+  { f: SBB_NOTES.Bb4, t: 0.64, d: 0.65 },  // B
+  { f: SBB_NOTES.C5,  t: 1.10, d: 0.55 },  // C
+  { f: SBB_NOTES.F4,  t: 1.42, d: 0.55 },  // F
+  { f: SBB_NOTES.F4,  t: 1.74, d: 0.65 },  // F
+  { f: SBB_NOTES.F5,  t: 2.20, d: 0.55 },  // F
+  { f: SBB_NOTES.F5,  t: 2.52, d: 0.55 },  // F
+  { f: SBB_NOTES.Eb5, t: 2.84, d: 0.95 },  // Es (final, longer sustain)
+]);
+
+/**
+ * Render a vibraphone-like note: sine fundamental mixed with a detuned
+ * second partial, a slow tremolo LFO, and a plucked envelope.
+ */
+function playSbbNote(freq, delay, duration) {
+  const ctx = S.ctx;
+  const start = ctx.currentTime + delay;
+
+  const fund = ctx.createOscillator();
+  fund.type = 'sine';
+  fund.frequency.value = freq;
+
+  const partial = ctx.createOscillator();
+  partial.type = 'sine';
+  partial.frequency.value = freq * 2.01; // slightly detuned octave → bell tone
+
+  const mix = ctx.createGain();
+  mix.gain.value = 0;
+  const partialMix = ctx.createGain();
+  partialMix.gain.value = 0.35;
+
+  // Tremolo LFO (vibraphone motor ~6 Hz)
+  const lfo = ctx.createOscillator();
+  lfo.frequency.value = 6;
+  const lfoDepth = ctx.createGain();
+  lfoDepth.gain.value = 0.15;
+  lfo.connect(lfoDepth);
+  lfoDepth.connect(mix.gain);
+
+  // Plucked envelope: fast attack, exponential decay
+  const peak = 0.28;
+  mix.gain.setValueAtTime(0, start);
+  mix.gain.linearRampToValueAtTime(peak, start + 0.01);
+  mix.gain.exponentialRampToValueAtTime(0.0001, start + duration);
+
+  fund.connect(mix);
+  partial.connect(partialMix);
+  partialMix.connect(mix);
+  mix.connect(ctx.destination);
+
+  fund.start(start);    fund.stop(start + duration + 0.05);
+  partial.start(start); partial.stop(start + duration + 0.05);
+  lfo.start(start);     lfo.stop(start + duration + 0.05);
+}
+
+function playSbbVibraphone(notes) {
+  if (!S.ctx) return;
+  for (const n of notes) playSbbNote(n.f, n.t, n.d);
+}
 
 function playModeBeep() {
   const fn = BEEPS[MODES[S.mode].beep];
@@ -2212,17 +2344,82 @@ async function fetchTurnServers() {
   return [];
 }
 
+/**
+ * Refresh TURN credentials if older than TIMING.turnMaxAge.
+ * Returns true when ICE_SERVERS was replaced with a new list — the caller
+ * must then recreate any existing peer so the new credentials take effect
+ * (PeerJS captures iceServers at RTCPeerConnection creation time).
+ */
 async function refreshTurnIfNeeded() {
-  if (Date.now() - _turnFetchedAt < TIMING.turnMaxAge) return;
+  if (Date.now() - _turnFetchedAt < TIMING.turnMaxAge) return false;
   console.log('[TURN] Credentials stale — refreshing');
   try {
     const turnServers = await fetchTurnServers();
     ICE_SERVERS = [...BASE_ICE, ...turnServers];
     _turnFetchedAt = Date.now();
     console.log('[TURN] Refreshed, total ICE servers:', ICE_SERVERS.length);
+    return true;
   } catch (e) {
     console.warn('[TURN] Refresh failed:', e.message);
+    return false;
   }
+}
+
+/**
+ * After a call connects, inspect getStats() and log which candidate pair
+ * won the ICE race. Critical for diagnosing WLAN↔cellular problems:
+ *   host ↔ host    — same network
+ *   srflx ↔ srflx  — direct via STUN, one NAT on each side
+ *   relay ↔ *      — going through TURN (mandatory for symmetric-NAT mobile)
+ * If we see "No relay candidates gathered" we know TURN never came up.
+ */
+function reportIceDiagnostics(pc) {
+  if (!pc.getStats) return;
+  pc.getStats(null).then((stats) => {
+    let nominated = null;
+    let localRelayGathered = false;
+    stats.forEach((r) => {
+      if (r.type === 'candidate-pair' && r.state === 'succeeded' && r.nominated) {
+        nominated = {
+          local:  stats.get(r.localCandidateId),
+          remote: stats.get(r.remoteCandidateId),
+        };
+      }
+      if (r.type === 'local-candidate' && r.candidateType === 'relay') {
+        localRelayGathered = true;
+      }
+    });
+    if (nominated) {
+      const lt = nominated.local  && nominated.local.candidateType  || '?';
+      const rt = nominated.remote && nominated.remote.candidateType || '?';
+      const proto = nominated.local && nominated.local.protocol;
+      console.log('[ICE pair]', lt, '→', rt, proto ? '(' + proto + ')' : '');
+      if (lt === 'relay' || rt === 'relay') {
+        toast('Verbindung über TURN-Relay');
+      }
+    }
+    if (!localRelayGathered) {
+      console.warn('[ICE] No relay candidates gathered — TURN unreachable. WLAN↔Mobilfunk may fail.');
+    }
+  }).catch((e) => console.warn('[ICE] getStats failed:', e.message));
+}
+
+/**
+ * Create a PeerJS Peer with the current ICE servers and sensible defaults.
+ * Centralised so iceCandidatePoolSize + iceServers stay in sync everywhere.
+ *
+ * `iceCandidatePoolSize: 4` pre-gathers candidates when the Peer is created,
+ * so the first call/answer doesn't pay full ICE-gathering latency. 4 is
+ * enough for STUN + TURN UDP/TCP without wasting bandwidth.
+ */
+function createPeer(id) {
+  return new Peer(id || undefined, {
+    debug: 1,
+    config: {
+      iceServers: ICE_SERVERS,
+      iceCandidatePoolSize: 4,
+    },
+  });
 }
 
 async function fullPeerReinit() {
@@ -2323,7 +2520,7 @@ function bindPeerEvents(peer) {
         console.warn('[Peer] Using temp ID after', TIMING.unavailableIdRetries, 'retries:', tempId);
         toast('Temporäres Signal – Partner muss erneut scannen');
         _usingTempId = true;
-        S.peer = new Peer(tempId || undefined, { debug: 1, config: { iceServers: ICE_SERVERS } });
+        S.peer = createPeer(tempId);
         _unavailableIdRetries = 0;
         bindPeerEvents(S.peer);
       }
@@ -2375,7 +2572,7 @@ function initPeer(forceFreshId = false) {
   S.partnerId = store.get(STORAGE_KEYS.partner);
   S.autoConnectTried = false;
   _usingTempId = false;
-  S.peer = new Peer(savedId || undefined, { debug: 1, config: { iceServers: ICE_SERVERS } });
+  S.peer = createPeer(savedId);
   bindPeerEvents(S.peer);
 }
 
@@ -2442,15 +2639,7 @@ function bindCall(call) {
       } else if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed') {
         clearTimeout(pc._disconnectTimer);
         dom.sigTag.textContent = 'SIG: ████';
-        if (pc.getStats) pc.getStats(null).then((stats) => {
-          stats.forEach((r) => {
-            if (r.type === 'candidate-pair' && r.state === 'succeeded' && r.nominated) {
-              const local  = stats.get(r.localCandidateId);
-              const remote = stats.get(r.remoteCandidateId);
-              console.log('[ICE pair]', local && local.candidateType, '->', remote && remote.candidateType);
-            }
-          });
-        }).catch(() => {});
+        reportIceDiagnostics(pc);
       }
     });
   }
@@ -2611,11 +2800,13 @@ function scheduleReconnect(delayMs) {
       if (!ok) { console.warn('[Reconnect] Reinit failed'); scheduleReconnect(10000); return; }
       if (S.partnerId && !S.connected) connectToPeer(S.partnerId);
     } else {
-      await refreshTurnIfNeeded();
-      if (S.peer && S.peer.options) S.peer.options.config = { iceServers: ICE_SERVERS };
-      if (!S.peer || S.peer.disconnected || S.peer.destroyed) {
-        initPeer();
-        setTimeout(() => { if (S.partnerId && !S.connected) connectToPeer(S.partnerId); }, 2000);
+      // If TURN was refreshed, the existing peer is using stale iceServers —
+      // recreate it so new credentials flow through to RTCPeerConnection.
+      const turnRefreshed = await refreshTurnIfNeeded();
+      const peerStale = !S.peer || S.peer.disconnected || S.peer.destroyed;
+      if (turnRefreshed || peerStale) {
+        await fullPeerReinit();
+        setTimeout(() => { if (S.partnerId && !S.connected) connectToPeer(S.partnerId); }, 500);
       } else {
         connectToPeer(S.partnerId);
       }
