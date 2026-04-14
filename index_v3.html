@@ -1449,19 +1449,36 @@ const STORAGE_KEYS = Object.freeze({
   partner: 'kc_partner_id_v1',
 });
 
-/** Timing constants */
+/** Timing constants — all ms unless noted. Single source of truth. */
 const TIMING = Object.freeze({
-  heartbeatInterval: 8000,       // ping every 8s
-  heartbeatTimeout:  35000,      // dead after 35s without pong
-  modeDebounce:      100,        // minimum ms between mode changes
-  safetyTimeout:     10000,      // connection safety net
-  iceDisconnectWait: 15000,      // wait before forcing reconnect on ICE disconnect
-  sleepThreshold:    30000,      // assume dead after this long hidden
-  reconnectMax:      20000,      // max backoff between reconnects
-  teardownCooldown:  10000,      // min time between teardowns before counting
-  maxTeardowns:      3,          // teardowns before hard backoff
-  vizBars:           48,         // spectrum visualizer bars
-  debugMaxLines:     100,        // debug log buffer size
+  // Heartbeat / keepalive
+  heartbeatInterval:  8000,      // ping cadence on DataChannel
+  heartbeatDead:      35000,     // no pong for this long → connection dead
+
+  // UI
+  modeDebounce:       100,       // min gap between mode changes
+  debugMaxLines:      100,       // debug log ring buffer
+
+  // Connection lifecycle
+  safetyTimeout:      10000,     // no remote stream this long → abort connect
+  stabilityWindow:    30000,     // connection stable this long → reset teardown counter
+  teardownCooldown:   10000,     // teardowns within this gap count against the cap
+  maxTeardowns:       3,         // teardowns before hard backoff
+  reconnectMax:       20000,     // max backoff between reconnects
+  iceDisconnectTimeout: 15000,   // stuck disconnected this long → force reconnect
+  shortHiccup:        5000,      // hidden below this → skip peer reinit
+
+  // PeerJS ID recovery after background/sleep
+  unavailableIdRetries: 10,      // retries before falling back to temp ID
+  unavailableIdStep:  2000,      // per-retry delay multiplier (2s, 4s, 6s, …)
+  unavailableIdMax:   20000,     // cap on per-retry delay
+
+  // TURN (Metered) credentials
+  turnFetchTimeout:   8000,      // per-URL fetch timeout
+  turnMaxAge:         10 * 60 * 1000, // refresh credentials this old
+
+  // Geolocation
+  posInterval:        5000,      // share own position every 5s
 });
 
 /* ────────────────────────────────────────────────────────────
@@ -1992,12 +2009,15 @@ function buildEffectChain(effectName) {
   return { input, mute, output, nodes };
 }
 
+/**
+ * Make sure we have a live microphone stream. Re-acquires if previous
+ * tracks ended (e.g. after the scanner closed the camera on iOS, which
+ * also invalidates the mic).
+ */
 async function ensureMic() {
-  // V3: Check readyState — if tracks ended/inactive, re-acquire
   if (S.rawStream) {
     const tracks = S.rawStream.getAudioTracks();
     if (tracks.length > 0 && tracks[0].readyState === 'live') return;
-    // Stream is stale — release and re-acquire
     try { S.rawStream.getTracks().forEach(t => t.stop()); } catch(_) {}
     S.rawStream = null;
   }
@@ -2008,7 +2028,6 @@ async function ensureMic() {
 }
 
 async function rebuildOutgoingStream() {
-  // V3: Guard — don't proceed if powered off mid-rebuild
   if (!S.powered) return null;
   await initAudio();
   await ensureMic();
@@ -2107,7 +2126,7 @@ function setupViz() {
 
   function draw() {
     S._vizRafId = requestAnimationFrame(draw);
-    // V3: Skip draw when canvas is hidden (e.g. power off)
+    // Skip invisible canvas (power-off transition, hidden modal)
     if (cv.offsetParent === null) return;
     const w = cv.width, h = cv.height;
     ctx2d.clearRect(0, 0, w, h);
@@ -2285,16 +2304,15 @@ function bindPeerEvents(peer) {
   peer.on('error', (err) => {
     console.error('peer err', err);
     if (err.type === 'unavailable-id') {
-      // V3 FIX: After background/sleep, broker holds our old session for 30-60s.
-      // Retry patiently up to 10 times (~90s total) before fallback to temp ID.
-      // Using a temp ID breaks auto-reconnect because the partner can't find us.
+      // After background/sleep the broker holds the previous session for
+      // ~30–60s. Retry patiently so we reclaim our original ID — a temp ID
+      // would break auto-reconnect because the partner cannot find us.
       _unavailableIdRetries++;
       try { peer.destroy(); } catch(_) {}
       if (S.peer === peer) S.peer = null;
-      if (_unavailableIdRetries <= 10) {
-        // Exponential-ish backoff: 2s, 4s, 6s, 8s, 10s, 12s, 14s, 16s, 18s, 20s
-        const delay = Math.min(_unavailableIdRetries * 2000, 20000);
-        console.log('[Peer] ID unavailable, retry', _unavailableIdRetries, '/10 in', delay, 'ms');
+      if (_unavailableIdRetries <= TIMING.unavailableIdRetries) {
+        const delay = Math.min(_unavailableIdRetries * TIMING.unavailableIdStep, TIMING.unavailableIdMax);
+        console.log('[Peer] ID unavailable, retry', _unavailableIdRetries, '/' + TIMING.unavailableIdRetries, 'in', delay, 'ms');
         if (_unavailableIdRetries === 1) toast('Signal neu aufbauen…');
         else if (_unavailableIdRetries === 5) toast('Warte auf Broker-Freigabe…');
         _usingTempId = false;
@@ -2302,7 +2320,7 @@ function bindPeerEvents(peer) {
       } else {
         const baseId = store.get(STORAGE_KEYS.myId);
         const tempId = baseId ? baseId + '-' + Date.now().toString(36).slice(-4) : null;
-        console.warn('[Peer] Using temp ID after 10 retries:', tempId);
+        console.warn('[Peer] Using temp ID after', TIMING.unavailableIdRetries, 'retries:', tempId);
         toast('Temporäres Signal – Partner muss erneut scannen');
         _usingTempId = true;
         S.peer = new Peer(tempId || undefined, { debug: 1, config: { iceServers: ICE_SERVERS } });
@@ -2461,10 +2479,7 @@ async function connectToPeer(otherId) {
   if (!otherId) { toast('Ungültiger Code'); return; }
   if (otherId === S.myId) { toast('Das ist dein eigener Code'); return; }
 
-  stopHeartbeat();
-  if (S.call) { try { S.call.close(); } catch(_) {} S.call = null; }
-  if (S.conn) { try { S.conn.close(); } catch(_) {} S.conn = null; }
-  S.connected = false;
+  dropActiveConnection();
   setConn('connecting');
   toast('Verbinde…');
 
@@ -2530,7 +2545,7 @@ function teardownAndReconnect() {
   }
   _lastTeardownTime = now;
 
-  if (_teardownCount > 3) {
+  if (_teardownCount > TIMING.maxTeardowns) {
     const backoff = Math.min(_teardownCount * 5000, 30000);
     console.log('[Reconnect] Too many teardowns (' + _teardownCount + ') — backing off', backoff, 'ms');
     toast('Instabil – warte ' + Math.round(backoff / 1000) + 's…');
@@ -2550,13 +2565,9 @@ function teardownAndReconnect() {
   _isReconnecting = true;
   console.log('[Reconnect] Teardown #' + _teardownCount + ' started');
 
-  stopHeartbeat();
   stopTransmit();
   clearTimeout(_reconnectTimer);
-  if (S.call) { try { S.call.close(); } catch(_) {} }
-  if (S.conn) { try { S.conn.close(); } catch(_) {} }
-  S.call = null; S.conn = null; S.connected = false;
-  setConn('ready'); setTalk('off');
+  dropActiveConnection();
 
   const iAmCaller = S.myId < S.partnerId;
   const baseDelay = iAmCaller ? 3000 : 1500;
@@ -2726,8 +2737,8 @@ function applyMode(broadcast = true) {
   }
 }
 
+/** Advance the current mode by `delta` (debounced to avoid partner desync). */
 function cycleMode(delta) {
-  // V3: Debounce rapid taps (prevents desync)
   const now = Date.now();
   if (now - _modeDebounce < TIMING.modeDebounce) return;
   _modeDebounce = now;
@@ -2835,8 +2846,9 @@ async function openScanner() {
 }
 
 async function closeScanner() {
-  // V3: Robust cleanup — stop then clear, catch each separately
   if (S.scanner) {
+    // stop() and clear() must each be guarded: if stop() throws because
+    // the scanner was never started, clear() is still safe and necessary.
     try { await S.scanner.stop(); } catch(_) {}
     try { await S.scanner.clear(); } catch(_) {}
   }
@@ -2960,16 +2972,9 @@ function updateCompass() {
 }
 
 function startCompass() {
-  // V3: Clean up any existing listeners first (race-safe)
-  if (S._compassListeners) {
-    window.removeEventListener('deviceorientationabsolute', S._compassListeners.onAbsolute, true);
-    window.removeEventListener('deviceorientation', S._compassListeners.onEvent, true);
-    S._compassListeners = null;
-  }
-  if (S._compassSensor) {
-    try { S._compassSensor.stop(); } catch(_) {}
-    S._compassSensor = null;
-  }
+  // Always tear down any previous compass state before starting fresh —
+  // startCompass() may be called again after a network change or resume.
+  stopCompassSensors();
 
   // GPS
   if ('geolocation' in navigator) {
@@ -3138,17 +3143,22 @@ function startCompass() {
   }, 4000);
 }
 
-function stopCompass() {
-  if (S.geoWatchId != null) { navigator.geolocation.clearWatch(S.geoWatchId); S.geoWatchId = null; }
-  if (S._geoWatchLow != null) { navigator.geolocation.clearWatch(S._geoWatchLow); S._geoWatchLow = null; }
-  if (S._posInterval) { clearInterval(S._posInterval); S._posInterval = null; }
-  if (S._geoRetryInterval) { clearInterval(S._geoRetryInterval); S._geoRetryInterval = null; }
+/** Stop orientation sensors/listeners only (geolocation kept alive). */
+function stopCompassSensors() {
   if (S._compassSensor) { try { S._compassSensor.stop(); } catch(_) {} S._compassSensor = null; }
   if (S._compassListeners) {
     window.removeEventListener('deviceorientationabsolute', S._compassListeners.onAbsolute, true);
     window.removeEventListener('deviceorientation', S._compassListeners.onEvent, true);
     S._compassListeners = null;
   }
+}
+
+function stopCompass() {
+  if (S.geoWatchId != null) { navigator.geolocation.clearWatch(S.geoWatchId); S.geoWatchId = null; }
+  if (S._geoWatchLow != null) { navigator.geolocation.clearWatch(S._geoWatchLow); S._geoWatchLow = null; }
+  if (S._posInterval) { clearInterval(S._posInterval); S._posInterval = null; }
+  if (S._geoRetryInterval) { clearInterval(S._geoRetryInterval); S._geoRetryInterval = null; }
+  stopCompassSensors();
   S.myPos = null; S.partnerPos = null;
   S._posIsIPBased = false; S._partnerPosIsIPBased = false;
   S.heading = null;
@@ -3221,17 +3231,36 @@ function releaseAllKeepAlives() { releaseWakeLock(); releaseWebLock(); stopAudio
 
 let _wentHiddenAt = 0;
 
-// V3 FIX: Unified resume handler — clear precedence, no racing reconnects.
-// After fullPeerReinit the 'open' handler auto-connects via autoConnectTried
-// reset in initPeer(). We only schedule an explicit reconnect if that fails.
+/**
+ * Close and drop the active call/DataChannel, reset connection flags,
+ * and return the UI to the "ready" state. Safe to call multiple times.
+ */
+function dropActiveConnection() {
+  stopHeartbeat();
+  if (S.call) { try { S.call.close(); } catch(_) {} S.call = null; }
+  if (S.conn) { try { S.conn.close(); } catch(_) {} S.conn = null; }
+  S.connected = false;
+  setConn('ready');
+  setTalk('off');
+}
+
+/**
+ * Resume logic when the page becomes visible again after being hidden.
+ * Precedence:
+ *   1. Still connected  → verify ICE health, teardown-and-reconnect if bad.
+ *   2. Partner saved    → drop any stale socket, reinit peer.
+ *                         On success, the 'open' handler auto-connects to
+ *                         S.partnerId via autoConnectTried reset. If the
+ *                         peer never opens, scheduleReconnect takes over.
+ *   3. No partner       → nothing to do.
+ */
 async function resumeFromBackground(hiddenMs) {
-  // Resume AudioContext (browsers may suspend despite keep-alive)
   if (S.ctx && S.ctx.state === 'suspended') {
     S.ctx.resume().then(() => console.log('[Audio] Context resumed'));
   }
   if (S.connected || S.partnerId) acquireAllKeepAlives();
 
-  // Case A: Still connected — verify ICE health
+  // 1) Still connected — check ICE health
   if (S.connected && S.call && S.call.peerConnection) {
     const pc = S.call.peerConnection;
     const iceState = pc.iceConnectionState;
@@ -3242,9 +3271,9 @@ async function resumeFromBackground(hiddenMs) {
     } else if (iceState === 'disconnected') {
       toast('Verbindung prüfen…');
       setTimeout(() => {
-        if (S.call && S.call.peerConnection &&
-            S.call.peerConnection.iceConnectionState !== 'connected' &&
-            S.call.peerConnection.iceConnectionState !== 'completed') {
+        const cur = S.call && S.call.peerConnection;
+        if (cur && cur !== pc) return; // replaced in the meantime
+        if (cur && cur.iceConnectionState !== 'connected' && cur.iceConnectionState !== 'completed') {
           teardownAndReconnect();
         }
       }, 3000);
@@ -3252,34 +3281,27 @@ async function resumeFromBackground(hiddenMs) {
     return;
   }
 
-  // Case B: Not connected but have partner — reconnect
+  // 3) No partner — nothing to do
   if (!S.partnerId) return;
 
+  // 2) Partner saved but not connected — reinit and let auto-connect fire
   console.log('[Visibility] Resume with partner saved, hidden', Math.round(hiddenMs / 1000), 's');
   toast('Verbinde neu…');
+  dropActiveConnection();
 
-  // Close any stale connections first
-  stopHeartbeat();
-  if (S.call) { try { S.call.close(); } catch(_) {} S.call = null; }
-  if (S.conn) { try { S.conn.close(); } catch(_) {} S.conn = null; }
-  S.connected = false;
-  setConn('ready'); setTalk('off');
-
-  // Short sleep + peer still alive → just reconnect
-  if (hiddenMs < 5000 && S.peer && !S.peer.disconnected && !S.peer.destroyed) {
+  // Short hiccup with a live peer → just reconnect, no reinit needed
+  if (hiddenMs < TIMING.shortHiccup && S.peer && !S.peer.disconnected && !S.peer.destroyed) {
     await refreshTurnIfNeeded();
     scheduleReconnect(500);
     return;
   }
 
-  // Everything else → full reinit. The 'open' handler will auto-connect
-  // via autoConnectTried reset. If peer fails to open, fall back.
   const opened = await fullPeerReinit();
   if (!opened) {
     console.warn('[Visibility] Peer did not open — fallback scheduleReconnect');
     scheduleReconnect(2000);
   }
-  // else: 'open' handler will auto-connect to S.partnerId within ~800ms
+  // else: 'open' handler auto-connects to S.partnerId
 }
 
 document.addEventListener('visibilitychange', () => {
@@ -3331,8 +3353,7 @@ function onNetworkBack() {
 /* §18 ─── POWER ON / OFF ─────────────────────────────────────── */
 
 async function powerOn() {
-  // V3: Guard against double power-on
-  if (S.powered) return;
+  if (S.powered) return; // idempotent
   dom.body.dataset.state = 'on';
   try { await initAudio(); } catch(e) { console.error(e); toast('Audio-Fehler'); return; }
 
