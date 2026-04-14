@@ -1,8 +1,8 @@
 /* KID COMM 3000 — Service Worker
  * Cache-first shell so the app works offline after the first visit.
- * WebRTC / signaling traffic of course still needs network. */
+ * WebRTC / signalling of course still needs live network. */
 
-const CACHE = 'kidcomm-v48';
+const CACHE = 'kidcomm-v100';
 const SHELL = [
   './',
   './index.html',
@@ -14,7 +14,9 @@ const SHELL = [
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(CACHE).then((cache) => cache.addAll(SHELL)).catch(() => {})
+    caches.open(CACHE)
+      .then((cache) => cache.addAll(SHELL))
+      .catch((err) => console.warn('[SW] Shell cache failed:', err))
   );
   self.skipWaiting();
 });
@@ -35,49 +37,47 @@ self.addEventListener('fetch', (event) => {
 
   const url = new URL(req.url);
 
-  // Don't touch PeerJS signaling / WebSocket / cross-origin realtime stuff
+  // Don't touch realtime / signalling traffic
   if (url.protocol === 'ws:' || url.protocol === 'wss:') return;
   if (url.hostname.includes('peerjs')) return;
+  // Skip TURN credential API and IP-geolocation APIs
+  if (url.hostname.includes('metered')) return;
+  if (url.hostname.includes('ipapi') || url.hostname.includes('ipwho') || url.hostname.includes('ip-api')) return;
 
-  event.respondWith(
-    (async () => {
-      const cache = await caches.open(CACHE);
+  event.respondWith((async () => {
+    const cache = await caches.open(CACHE);
 
-      // Network-first for HTML / navigation so updates land immediately.
-      const isHTML = req.mode === 'navigate'
-        || (req.destination === '' && req.headers.get('accept')?.includes('text/html'))
-        || url.pathname.endsWith('/')
-        || url.pathname.endsWith('.html');
+    // Network-first for HTML/navigation so updates land immediately.
+    const isHTML = req.mode === 'navigate'
+      || (req.destination === '' && req.headers.get('accept')?.includes('text/html'))
+      || url.pathname.endsWith('/')
+      || url.pathname.endsWith('.html');
 
-      if (isHTML && url.origin === location.origin) {
-        try {
-          const resp = await fetch(req, { cache: 'no-store' });
-          if (resp && resp.ok) cache.put(req, resp.clone()).catch(() => {});
-          return resp;
-        } catch (err) {
-          const shell = await cache.match('./index.html');
-          if (shell) return shell;
-          throw err;
-        }
-      }
-
-      // Cache-first (with background revalidation) for everything else.
-      const cached = await cache.match(req);
-      if (cached) {
-        fetch(req).then((resp) => {
-          if (resp && resp.ok) cache.put(req, resp.clone()).catch(() => {});
-        }).catch(() => {});
-        return cached;
-      }
+    if (isHTML && url.origin === location.origin) {
       try {
-        const resp = await fetch(req);
-        if (resp && resp.ok && (url.origin === location.origin)) {
-          cache.put(req, resp.clone()).catch(() => {});
-        }
+        const resp = await fetch(req, { cache: 'no-store' });
+        if (resp && resp.ok) cache.put(req, resp.clone()).catch(() => {});
         return resp;
       } catch (err) {
+        const shell = await cache.match('./index.html');
+        if (shell) return shell;
         throw err;
       }
-    })()
-  );
+    }
+
+    // Cache-first (with background revalidation) for static assets.
+    const cached = await cache.match(req);
+    if (cached) {
+      fetch(req).then((resp) => {
+        if (resp && resp.ok) cache.put(req, resp.clone()).catch(() => {});
+      }).catch(() => {});
+      return cached;
+    }
+    const resp = await fetch(req);
+    // Cache same-origin and successful CORS responses
+    if (resp && resp.ok && (url.origin === location.origin || resp.type === 'cors')) {
+      cache.put(req, resp.clone()).catch(() => {});
+    }
+    return resp;
+  })());
 });

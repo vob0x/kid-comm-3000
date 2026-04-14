@@ -127,6 +127,19 @@ body[data-mode="geheim"] {
   --text: #d5ffe5;
   --text-dim: #5a9a78;
 }
+/* ---------- THEME: BAHNHOF (SBB red/white) ---------- */
+body[data-mode="bahnhof"] {
+  --primary: #eb0000;              /* SBB red */
+  --primary-glow: rgba(235, 0, 0, 0.75);
+  --accent: #ffffff;
+  --accent-glow: rgba(255, 255, 255, 0.6);
+  --bg-deep: #1a0606;
+  --bg-mid: #300b0b;
+  --surface: rgba(40, 10, 10, 0.7);
+  --surface-border: rgba(235, 0, 0, 0.5);
+  --text: #ffe9e9;
+  --text-dim: #c58585;
+}
 
 /* ============================================================
    BACKGROUND LAYER (mode-specific scenes)
@@ -146,6 +159,7 @@ body[data-mode="rettung"]   .bg-rettung   { display: block; }
 body[data-mode="astronaut"] .bg-astronaut { display: block; }
 body[data-mode="pilot"]     .bg-pilot     { display: block; }
 body[data-mode="geheim"]    .bg-geheim    { display: block; }
+body[data-mode="bahnhof"]   .bg-bahnhof   { display: block; }
 
 /* ---- POLIZEI bg: alternating strobes ---- */
 .strobe {
@@ -411,6 +425,59 @@ body[data-mode="geheim"]    .bg-geheim    { display: block; }
 @keyframes classifiedPulse {
   0%, 100% { opacity: 0.15; }
   50% { opacity: 0.35; }
+}
+
+/* ---- BAHNHOF bg: station platform with moving rails ---- */
+.bg-bahnhof::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(180deg, #1a0606 0%, #300b0b 45%, #1a0606 55%, #0a0303 100%),
+    repeating-linear-gradient(90deg,
+      transparent 0, transparent 60px,
+      rgba(235, 0, 0, 0.08) 60px, rgba(235, 0, 0, 0.08) 62px);
+}
+.sbb-rails {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 20%;
+  height: 12px;
+  background: repeating-linear-gradient(90deg,
+    transparent 0, transparent 30px,
+    rgba(255, 255, 255, 0.25) 30px, rgba(255, 255, 255, 0.25) 60px);
+  animation: sbbRails 1.2s linear infinite;
+  opacity: 0.7;
+}
+@keyframes sbbRails {
+  from { background-position: 0 0; }
+  to   { background-position: -60px 0; }
+}
+.sbb-platform {
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  height: 20%;
+  background: linear-gradient(180deg, rgba(50, 15, 15, 0.9) 0%, rgba(20, 5, 5, 1) 100%);
+  border-top: 3px solid rgba(235, 0, 0, 0.6);
+  box-shadow: 0 -8px 20px rgba(235, 0, 0, 0.25);
+}
+.sbb-sign {
+  position: absolute;
+  top: 10%;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #eb0000;
+  color: #fff;
+  font-family: 'Orbitron', sans-serif;
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  padding: 6px 16px;
+  border-radius: 6px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5);
+  opacity: 0.85;
+  pointer-events: none;
 }
 
 /* ============================================================
@@ -1248,6 +1315,11 @@ body[data-state="on"] .power-btn {
     <div class="radar-sweep"></div>
     <div class="classified">CLASSIFIED</div>
   </div>
+  <div class="bg-layer bg-bahnhof">
+    <div class="sbb-sign">GLEIS 7</div>
+    <div class="sbb-rails"></div>
+    <div class="sbb-platform"></div>
+  </div>
 </div>
 
 <!-- HUD -->
@@ -1390,215 +1462,302 @@ body[data-state="on"] .power-btn {
 <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 
+
 <script>
 /* ============================================================
-   KID COMM 3000 — main JS
+   KID COMM 3000 V3
+   Complete rewrite — clean architecture, zero patches.
+   Same features, same UI, built right from line one.
    ============================================================ */
 'use strict';
 
-// ---------- Modes ----------
-const MODES = [
-  {
-    id: 'polizei', name: 'POLIZEI', icon: '🚓',
-    audio: { freq: 1800, q: 1.2, noise: 0.020, dist: 3.2, highpass: 400 },
-    beep: 'policeSiren',
-  },
-  {
-    id: 'feuerwehr', name: 'FEUERWEHR', icon: '🚒',
-    audio: { freq: 1100, q: 0.8, noise: 0.030, dist: 4.2, highpass: 300 },
-    beep: 'airHorn',
-  },
-  {
-    id: 'rettung', name: 'RETTUNG', icon: '🚑',
-    audio: { freq: 1600, q: 0.9, noise: 0.015, dist: 2.5, highpass: 400 },
-    beep: 'ambulance',
-  },
-  {
-    id: 'astronaut', name: 'ASTRONAUT', icon: '🚀',
-    audio: { freq: 2000, q: 1.4, noise: 0.010, dist: 2.0, highpass: 600 },
-    beep: 'spaceSweep',
-  },
-  {
-    id: 'pilot', name: 'PILOT', icon: '✈️',
-    audio: { freq: 1600, q: 1.0, noise: 0.012, dist: 2.0, highpass: 400 },
-    beep: 'cockpitChime',
-  },
-  {
-    id: 'geheim', name: 'GEHEIMAGENT', icon: '🕵️',
-    audio: { freq: 1400, q: 1.2, noise: 0.009, dist: 2.2, highpass: 500 },
-    beep: 'spyLock',
-  },
-];
+/* ────────────────────────────────────────────────────────────
+   §1  CONFIGURATION & CONSTANTS
+   ──────────────────────────────────────────────────────────── */
 
-// ---------- Voice effects (applied to outgoing audio) ----------
-const EFFECTS = [
+/** The themed walkie-talkie modes */
+const MODES = Object.freeze([
+  { id: 'polizei',   name: 'POLIZEI',     icon: '🚓', beep: 'policeSiren',  audio: { freq: 1800, q: 1.2, noise: 0.020, dist: 3.2, highpass: 400 } },
+  { id: 'feuerwehr', name: 'FEUERWEHR',   icon: '🚒', beep: 'airHorn',      audio: { freq: 1100, q: 0.8, noise: 0.030, dist: 4.2, highpass: 300 } },
+  { id: 'rettung',   name: 'RETTUNG',     icon: '🚑', beep: 'ambulance',    audio: { freq: 1600, q: 0.9, noise: 0.015, dist: 2.5, highpass: 400 } },
+  { id: 'astronaut', name: 'ASTRONAUT',   icon: '🚀', beep: 'spaceSweep',   audio: { freq: 2000, q: 1.4, noise: 0.010, dist: 2.0, highpass: 600 } },
+  { id: 'pilot',     name: 'PILOT',       icon: '✈️', beep: 'cockpitChime', audio: { freq: 1600, q: 1.0, noise: 0.012, dist: 2.0, highpass: 400 } },
+  { id: 'geheim',    name: 'GEHEIMAGENT', icon: '🕵️', beep: 'spyLock',      audio: { freq: 1400, q: 1.2, noise: 0.009, dist: 2.2, highpass: 500 } },
+  // Classic station PA: narrow mid-band, light distortion, airy tail
+  { id: 'bahnhof',   name: 'BAHNHOF',     icon: '🚉', beep: 'sbbChime',     audio: { freq: 1400, q: 1.5, noise: 0.006, dist: 1.8, highpass: 500 } },
+]);
+
+/** Voice effects applied to outgoing audio */
+const EFFECTS = Object.freeze([
   { name: 'NORMAL',  icon: '🎙' },
   { name: 'ROBOTER', icon: '🤖' },
   { name: 'TIEF',    icon: '🐻' },
   { name: 'HOCH',    icon: '🐿️' },
   { name: 'ALIEN',   icon: '👽' },
-];
+]);
 
-// ---------- State ----------
-// ---------- Persistent storage (own ID + last partner) ----------
-const STORE = {
+/** Metered.ca TURN credentials (primary, dynamic, ~20 GB/month free). */
+const TURN_CONFIG = Object.freeze({
+  app: 'kidcomm3000',
+  key: '2b1eb045790c6ef8269fa5ea5e137da9ada9',
+});
+
+/**
+ * Baseline ICE servers — always present regardless of network state:
+ *   • Public STUN (for reflexive candidates)
+ *   • Open Relay Project TURN (free public relay, covers CGNAT and
+ *     WiFi↔cellular handover when the Metered account is unavailable).
+ * The Metered dynamic TURN servers are appended on top of this baseline.
+ */
+const BASE_ICE = Object.freeze([
+  { urls: 'stun:stun.l.google.com:19302' },
+  { urls: 'stun:stun1.l.google.com:19302' },
+  { urls: 'stun:stun.cloudflare.com:3478' },
+  {
+    urls: [
+      'turn:openrelay.metered.ca:80',
+      'turn:openrelay.metered.ca:443',
+      'turn:openrelay.metered.ca:443?transport=tcp',
+      'turns:openrelay.metered.ca:443',
+    ],
+    username: 'openrelayproject',
+    credential: 'openrelayproject',
+  },
+]);
+
+/** localStorage keys (compatible with V1/V2) */
+const STORAGE_KEYS = Object.freeze({
   myId:    'kc_my_id_v1',
   partner: 'kc_partner_id_v1',
-};
-const store = {
-  get(k)    { try { return localStorage.getItem(k); } catch(e) { console.warn('[Store]', k, e.message); return null; } },
-  set(k, v) { try { localStorage.setItem(k, v); } catch(e) {} },
-  del(k)    { try { localStorage.removeItem(k); } catch(e) {} },
-};
+});
 
-const state = {
+/** Timing constants — all ms unless noted. Single source of truth. */
+const TIMING = Object.freeze({
+  // Heartbeat / keepalive
+  heartbeatInterval:  8000,      // ping cadence on DataChannel
+  heartbeatDead:      35000,     // no pong for this long → connection dead
+
+  // UI
+  modeDebounce:       100,       // min gap between mode changes
+  debugMaxLines:      100,       // debug log ring buffer
+
+  // Connection lifecycle
+  safetyTimeout:      10000,     // no remote stream this long → abort connect
+  stabilityWindow:    30000,     // connection stable this long → reset teardown counter
+  teardownCooldown:   10000,     // teardowns within this gap count against the cap
+  maxTeardowns:       3,         // teardowns before hard backoff
+  reconnectMax:       20000,     // max backoff between reconnects
+  iceDisconnectTimeout: 15000,   // stuck disconnected this long → force reconnect
+  shortHiccup:        5000,      // hidden below this → skip peer reinit
+
+  // PeerJS ID recovery after background/sleep
+  unavailableIdRetries: 10,      // retries before falling back to temp ID
+  unavailableIdStep:  2000,      // per-retry delay multiplier (2s, 4s, 6s, …)
+  unavailableIdMax:   20000,     // cap on per-retry delay
+
+  // TURN (Metered) credentials
+  turnFetchTimeout:   8000,      // per-URL fetch timeout
+  turnMaxAge:         10 * 60 * 1000, // refresh credentials this old
+
+  // Geolocation
+  posInterval:        5000,      // share own position every 5s
+});
+
+/* ────────────────────────────────────────────────────────────
+   §2  APPLICATION STATE
+   ──────────────────────────────────────────────────────────── */
+
+/**
+ * Runtime application state. Holds only values the UI / radio protocol
+ * actually branches on. Internal timers, single-purpose refs and private
+ * bookkeeping live as module-level `let`s near the function that owns
+ * them — declaring them here as well would be a lie about what's in S.
+ *
+ * Naming: leading underscore marks internal implementation refs
+ * (timers, pending node lists, cached handlers) that the rest of the
+ * code should not inspect directly.
+ */
+const S = {
+  // Power
   powered: false,
-  mode: 0,            // index into MODES
-  effect: 0,          // index into EFFECTS
+
+  // Mode & effects
+  mode: 0,
+  effect: 0,
+
+  // PeerJS connection
   peer: null,
   myId: null,
-  partnerId: null,    // last successfully-paired peer
+  partnerId: null,
   autoConnectTried: false,
-  conn: null,
-  call: null,
-  rawStream: null,    // raw mic
-  outStream: null,    // processed stream sent via WebRTC
-  outMute: null,      // GainNode used to mute outgoing audio (tap-to-talk)
-  effectChain: null,  // { input, output, nodes: [] }
-  remoteStream: null,
-  remoteAudioEl: null,
-  rxAnalyser: null,
-  txAnalyser: null,
+  conn: null,               // DataConnection
+  call: null,               // MediaConnection
   connected: false,
   transmitting: false,
-  ctx: null,
-  staticGain: null,
-  rxFilter: null,
-  rxDistortion: null,
+
+  // Audio graph
+  ctx: null,                // AudioContext
+  rawStream: null,          // raw mic MediaStream
+  outStream: null,          // processed outgoing MediaStream
+  outMute: null,            // GainNode for tap-to-talk
+  effectChain: null,        // { input, mute, output, nodes[] }
+  staticGain: null,         // pink-noise gain
+  rxFilter: null,           // incoming bandpass
+  rxDistortion: null,       // incoming waveshaper
+  rxAnalyser: null,         // incoming FFT
+  txAnalyser: null,         // outgoing FFT
+  remoteStream: null,
+  remoteAudioEl: null,
+  _rxNodes: null,           // all nodes in the RX chain (for tear-down)
+
+  // Scanner
   scanner: null,
-  // compass
-  myPos: null,          // { lat, lng }
-  partnerPos: null,     // { lat, lng }
-  heading: null,        // device compass heading (degrees)
-  geoWatchId: null,
-  _geoWatchLow: null,
+
+  // Geolocation & compass
+  myPos: null,
+  partnerPos: null,
+  heading: null,
+  geoWatchId: null,         // high-accuracy watch handle
+  _geoWatchLow: null,       // low-accuracy watch handle
+  _geoRetryInterval: null,
   _posInterval: null,
+  _posIsIPBased: false,
+  _partnerPosIsIPBased: false,
   _compassSensor: null,
-  _compassListeners: null, // { onAbsolute, onEvent } for cleanup
+  _compassListeners: null,  // { onAbsolute, onEvent } for cleanup
+
+  // Timers & animation
   _clockInterval: null,
   _vizRafId: null,
-  _rxNodes: null,
+  _vizResizeHandler: null,
+  _stabilityTimer: null,
   _safetyTimeout: null,
 };
 
-// ---------- DOM ----------
-const $ = (id) => document.getElementById(id);
-const els = {
-  body: document.body,
-  modeIcon: $('modeIcon'),
-  modeName: $('modeName'),
-  chBig: $('chBig'),
-  chSmall: $('chSmall'),
-  talkBtn: $('talkBtn'),
-  talkIcon: $('talkIcon'),
-  talkLabel: $('talkLabel'),
-  modePrevBtn: $('modePrevBtn'),
-  modeNextBtn: $('modeNextBtn'),
-  callBtn: $('callBtn'),
-  qrBtn: $('qrBtn'),
-  scanBtn: $('scanBtn'),
-  fxBtn: $('fxBtn'),
-  fxTag: $('fxTag'),
-  fxIcon: $('fxIcon'),
-  sosBtn: $('sosBtn'),
-  powerBtn: $('powerBtn'),
-  compass: $('compass'),
-  compassDial: $('compassDial'),
-  compassPartner: $('compassPartner'),
-  compassDist: $('compassDist'),
-  qrModal: $('qrModal'),
-  qrHolder: $('qrHolder'),
-  peerIdText: $('peerIdText'),
-  closeQrBtn: $('closeQrBtn'),
-  scanModal: $('scanModal'),
-  closeScanBtn: $('closeScanBtn'),
-  vizCanvas: $('vizCanvas'),
-  sigTag: $('sigTag'),
-  clockTag: $('clockTag'),
-  toast: $('toast'),
-  bgFire: document.querySelector('.bg-feuerwehr'),
-  bgAstro: document.querySelector('.bg-astronaut'),
+/* ────────────────────────────────────────────────────────────
+   §3  SAFE STORAGE WRAPPER
+   ──────────────────────────────────────────────────────────── */
+
+const storage = {
+  get(key)       { try { return localStorage.getItem(key); } catch { return null; } },
+  set(key, val)  { try { localStorage.setItem(key, val); } catch {} },
+  del(key)       { try { localStorage.removeItem(key); } catch {} },
 };
 
-// ---------- Toast ----------
-let toastTimer;
+/* ────────────────────────────────────────────────────────────
+   §4  DOM REFERENCES
+   ──────────────────────────────────────────────────────────── */
+
+const $ = (id) => document.getElementById(id);
+const dom = {
+  body:           document.body,
+  modeIcon:       $('modeIcon'),
+  modeName:       $('modeName'),
+  chBig:          $('chBig'),
+  chSmall:        $('chSmall'),
+  talkBtn:        $('talkBtn'),
+  talkIcon:       $('talkIcon'),
+  talkLabel:      $('talkLabel'),
+  modePrevBtn:    $('modePrevBtn'),
+  modeNextBtn:    $('modeNextBtn'),
+  callBtn:        $('callBtn'),
+  qrBtn:          $('qrBtn'),
+  scanBtn:        $('scanBtn'),
+  fxBtn:          $('fxBtn'),
+  fxIcon:         $('fxIcon'),
+  sosBtn:         $('sosBtn'),
+  powerBtn:       $('powerBtn'),
+  compass:        $('compass'),
+  compassDial:    $('compassDial'),
+  compassPartner: $('compassPartner'),
+  compassDist:    $('compassDist'),
+  qrModal:        $('qrModal'),
+  qrHolder:       $('qrHolder'),
+  peerIdText:     $('peerIdText'),
+  closeQrBtn:     $('closeQrBtn'),
+  scanModal:      $('scanModal'),
+  closeScanBtn:   $('closeScanBtn'),
+  vizCanvas:      $('vizCanvas'),
+  sigTag:         $('sigTag'),
+  clockTag:       $('clockTag'),
+  toast:          $('toast'),
+  bgFire:         document.querySelector('.bg-feuerwehr'),
+  bgAstro:        document.querySelector('.bg-astronaut'),
+};
+
+/* ────────────────────────────────────────────────────────────
+   §5  UTILITIES (toast, debug, clock, haptics)
+   ──────────────────────────────────────────────────────────── */
+
+let _toastTimer = 0;
 function toast(msg, ms = 2000) {
-  els.toast.textContent = msg;
-  els.toast.classList.add('show');
-  clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => els.toast.classList.remove('show'), ms);
+  dom.toast.textContent = msg;
+  dom.toast.classList.add('show');
+  clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(() => dom.toast.classList.remove('show'), ms);
 }
 
-// ---------- Debug Log (tap SIG tag 3x to toggle) ----------
 const _debugLines = [];
-const _maxDebugLines = 80;
 function dlog(msg) {
-  const ts = new Date().toLocaleTimeString('de', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  const ts = new Date().toLocaleTimeString('de', { hour:'2-digit', minute:'2-digit', second:'2-digit' });
   _debugLines.push(ts + ' ' + msg);
-  if (_debugLines.length > _maxDebugLines) _debugLines.shift();
-  const el = document.getElementById('debugLog');
+  if (_debugLines.length > TIMING.debugMaxLines) _debugLines.shift();
+  const el = $('debugLog');
   if (el && !el.classList.contains('hidden')) {
     el.textContent = _debugLines.join('\n');
     el.scrollTop = el.scrollHeight;
   }
 }
-// Intercept console for connection-related logs
-(function() {
+
+// Capture connection-related console output into debug log
+(function patchConsole() {
   const orig = { log: console.log, warn: console.warn, error: console.error };
-  ['log', 'warn', 'error'].forEach(level => {
+  for (const level of ['log', 'warn', 'error']) {
     console[level] = function(...args) {
       orig[level].apply(console, args);
       const s = args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ');
-      // Only capture connection-related messages
       if (/\[ICE\]|\[Peer\]|\[NET\]|\[TURN\]|\[Reconnect\]|\[Heartbeat\]|\[Compass\]|\[GPS\]/i.test(s)) {
         dlog((level === 'error' ? '❌ ' : level === 'warn' ? '⚠️ ' : '') + s);
       }
     };
-  });
-})();
-// Toggle on triple-tap of SIG tag
-let _sigTapCount = 0, _sigTapTimer = 0;
-document.addEventListener('DOMContentLoaded', () => {
-  const sig = document.getElementById('sigTag');
-  const dbg = document.getElementById('debugLog');
-  if (sig && dbg) {
-    sig.style.pointerEvents = 'auto';
-    sig.addEventListener('click', () => {
-      _sigTapCount++;
-      clearTimeout(_sigTapTimer);
-      _sigTapTimer = setTimeout(() => { _sigTapCount = 0; }, 600);
-      if (_sigTapCount >= 3) {
-        _sigTapCount = 0;
-        dbg.classList.toggle('hidden');
-        if (!dbg.classList.contains('hidden')) {
-          dbg.textContent = _debugLines.join('\n');
-          dbg.scrollTop = dbg.scrollHeight;
-        }
-      }
-    });
   }
+})();
+
+// Debug log toggle: triple-tap SIG tag
+let _sigTaps = 0, _sigTimer = 0;
+document.addEventListener('DOMContentLoaded', () => {
+  const sig = $('sigTag'), dbg = $('debugLog');
+  if (!sig || !dbg) return;
+  sig.style.pointerEvents = 'auto';
+  sig.addEventListener('click', () => {
+    _sigTaps++;
+    clearTimeout(_sigTimer);
+    _sigTimer = setTimeout(() => { _sigTaps = 0; }, 600);
+    if (_sigTaps >= 3) {
+      _sigTaps = 0;
+      dbg.classList.toggle('hidden');
+      if (!dbg.classList.contains('hidden')) {
+        dbg.textContent = _debugLines.join('\n');
+        dbg.scrollTop = dbg.scrollHeight;
+      }
+    }
+  });
 });
 
-function triggerSOSFlash() {
-  const fl = document.getElementById('sosFlash');
-  if (!fl) return;
-  fl.classList.remove('active');
-  void fl.offsetWidth; // force reflow
-  fl.classList.add('active');
-  setTimeout(() => fl.classList.remove('active'), 1600);
+function updateClock() {
+  const d = new Date();
+  dom.clockTag.textContent =
+    String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
 }
 
-// ---------- Background scene extras ----------
+function vibrate(pattern) {
+  if (navigator.vibrate) navigator.vibrate(pattern);
+}
+
+/* ────────────────────────────────────────────────────────────
+   §6  BACKGROUND SCENE DECORATIONS
+   ──────────────────────────────────────────────────────────── */
+
 function buildEmbers() {
   for (let i = 0; i < 20; i++) {
     const e = document.createElement('div');
@@ -1607,9 +1766,10 @@ function buildEmbers() {
     e.style.animationDuration = (4 + Math.random() * 5) + 's';
     e.style.animationDelay = (Math.random() * 8) + 's';
     e.style.setProperty('--drift', (Math.random() * 60 - 30) + 'px');
-    els.bgFire.appendChild(e);
+    dom.bgFire.appendChild(e);
   }
 }
+
 function buildTwinkles() {
   for (let i = 0; i < 18; i++) {
     const t = document.createElement('div');
@@ -1618,55 +1778,52 @@ function buildTwinkles() {
     t.style.top = Math.random() * 100 + '%';
     t.style.animationDelay = (Math.random() * 3) + 's';
     t.style.animationDuration = (2 + Math.random() * 3) + 's';
-    els.bgAstro.appendChild(t);
+    dom.bgAstro.appendChild(t);
   }
 }
 
-// ---------- Clock ----------
-function updateClock() {
-  const d = new Date();
-  const hh = String(d.getHours()).padStart(2, '0');
-  const mm = String(d.getMinutes()).padStart(2, '0');
-  els.clockTag.textContent = hh + ':' + mm;
-}
+/* ────────────────────────────────────────────────────────────
+   §7  AUDIO ENGINE
+   ──────────────────────────────────────────────────────────── */
 
-// ============================================================
-//                       AUDIO ENGINE
-// ============================================================
-
+/** Initialize AudioContext and background static hiss */
 async function initAudio() {
-  if (state.ctx) return;
+  if (S.ctx) return;
   const Ctx = window.AudioContext || window.webkitAudioContext;
   if (!Ctx) { toast('Audio nicht unterstützt'); return; }
-  state.ctx = new Ctx();
-  if (state.ctx.state === 'suspended') await state.ctx.resume();
+  S.ctx = new Ctx();
+  if (S.ctx.state === 'suspended') await S.ctx.resume();
 
-  // Static hiss background (looped pink noise through highpass)
-  const ctx = state.ctx;
-  const bufSize = ctx.sampleRate * 2;
-  const buf = ctx.createBuffer(1, bufSize, ctx.sampleRate);
-  const d = buf.getChannelData(0);
+  // Pink noise buffer (looped)
+  const ctx = S.ctx;
+  const len = ctx.sampleRate * 2;
+  const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+  const data = buf.getChannelData(0);
   let b0 = 0, b1 = 0, b2 = 0;
-  for (let i = 0; i < bufSize; i++) {
+  for (let i = 0; i < len; i++) {
     const w = Math.random() * 2 - 1;
     b0 = 0.99765 * b0 + w * 0.0990460;
     b1 = 0.96300 * b1 + w * 0.2965164;
     b2 = 0.57000 * b2 + w * 1.0526913;
-    d[i] = (b0 + b1 + b2 + w * 0.1848) * 0.15;
+    data[i] = (b0 + b1 + b2 + w * 0.1848) * 0.15;
   }
   const src = ctx.createBufferSource();
-  src.buffer = buf; src.loop = true;
+  src.buffer = buf;
+  src.loop = true;
   const hp = ctx.createBiquadFilter();
-  hp.type = 'highpass'; hp.frequency.value = 1300;
-  state.staticGain = ctx.createGain();
-  state.staticGain.gain.value = 0; // silent by default — noise only while transmitting
-  src.connect(hp); hp.connect(state.staticGain); state.staticGain.connect(ctx.destination);
+  hp.type = 'highpass';
+  hp.frequency.value = 1300;
+  S.staticGain = ctx.createGain();
+  S.staticGain.gain.value = 0;
+  src.connect(hp);
+  hp.connect(S.staticGain);
+  S.staticGain.connect(ctx.destination);
   src.start();
 }
 
+/** Generate tanh distortion curve */
 function makeDistortionCurve(amount) {
-  const n = 256;
-  const curve = new Float32Array(n);
+  const n = 256, curve = new Float32Array(n);
   for (let i = 0; i < n; i++) {
     const x = (i - n / 2) / (n / 2);
     curve[i] = Math.tanh(amount * x);
@@ -1674,49 +1831,45 @@ function makeDistortionCurve(amount) {
   return curve;
 }
 
+/** Apply current mode's audio parameters to RX chain + static hiss */
 function applyModeAudio() {
-  const m = MODES[state.mode].audio;
-  // Only apply noise if currently transmitting; otherwise keep silent
-  if (state.staticGain) state.staticGain.gain.value = state.transmitting ? m.noise : 0;
-  if (state.rxFilter) {
-    state.rxFilter.frequency.value = m.freq;
-    state.rxFilter.Q.value = m.q;
-  }
-  if (state.rxDistortion) {
-    state.rxDistortion.curve = makeDistortionCurve(m.dist);
-  }
+  const m = MODES[S.mode].audio;
+  if (S.staticGain) S.staticGain.gain.value = S.transmitting ? m.noise : 0;
+  if (S.rxFilter) { S.rxFilter.frequency.value = m.freq; S.rxFilter.Q.value = m.q; }
+  if (S.rxDistortion) S.rxDistortion.curve = makeDistortionCurve(m.dist);
 }
 
-// ---- Simple tone helpers ----
+/* ── Tone helpers ── */
+
 function playTone(freq, dur = 0.1, vol = 0.22, type = 'sine', delay = 0) {
-  if (!state.ctx) return;
-  const ctx = state.ctx;
-  const t = ctx.currentTime + delay;
-  const osc = ctx.createOscillator();
-  const g = ctx.createGain();
+  if (!S.ctx) return;
+  const t = S.ctx.currentTime + delay;
+  const osc = S.ctx.createOscillator();
+  const g = S.ctx.createGain();
   osc.type = type; osc.frequency.value = freq;
   g.gain.setValueAtTime(0, t);
   g.gain.linearRampToValueAtTime(vol, t + 0.01);
   g.gain.setValueAtTime(vol, t + dur - 0.02);
   g.gain.linearRampToValueAtTime(0, t + dur);
-  osc.connect(g); g.connect(ctx.destination);
+  osc.connect(g); g.connect(S.ctx.destination);
   osc.start(t); osc.stop(t + dur + 0.02);
 }
+
 function playClick(freq = 180, dur = 0.04, vol = 0.12) {
-  if (!state.ctx) return;
-  const ctx = state.ctx;
-  const t = ctx.currentTime;
-  const osc = ctx.createOscillator();
-  const g = ctx.createGain();
+  if (!S.ctx) return;
+  const t = S.ctx.currentTime;
+  const osc = S.ctx.createOscillator();
+  const g = S.ctx.createGain();
   osc.type = 'square'; osc.frequency.value = freq;
   g.gain.setValueAtTime(vol, t);
   g.gain.exponentialRampToValueAtTime(0.001, t + dur);
-  osc.connect(g); g.connect(ctx.destination);
+  osc.connect(g); g.connect(S.ctx.destination);
   osc.start(t); osc.stop(t + dur + 0.01);
 }
+
 function playStaticBurst(dur = 0.18, vol = 0.2) {
-  if (!state.ctx) return;
-  const ctx = state.ctx;
+  if (!S.ctx) return;
+  const ctx = S.ctx;
   const size = Math.floor(ctx.sampleRate * dur);
   const buf = ctx.createBuffer(1, size, ctx.sampleRate);
   const d = buf.getChannelData(0);
@@ -1731,33 +1884,33 @@ function playStaticBurst(dur = 0.18, vol = 0.2) {
   src.connect(hp); hp.connect(g); g.connect(ctx.destination);
   src.start();
 }
+
 function playSquelchOpen()  { playClick(140, 0.03, 0.14); setTimeout(() => playStaticBurst(0.12, 0.18), 10); }
 function playSquelchClose() { playStaticBurst(0.08, 0.12); setTimeout(() => playClick(110, 0.03, 0.12), 30); }
 
-// ---- Mode-specific beeps ----
+/* ── Mode-specific call tones ── */
+
 const BEEPS = {
-  policeSiren: () => {
+  policeSiren() {
     playTone(880, 0.12, 0.24, 'square');
     playTone(1320, 0.12, 0.24, 'square', 0.14);
     playTone(880, 0.12, 0.24, 'square', 0.28);
     playTone(1320, 0.16, 0.24, 'square', 0.42);
   },
-  airHorn: () => {
+  airHorn() {
     playTone(180, 0.35, 0.28, 'sawtooth');
     playTone(120, 0.35, 0.22, 'sawtooth');
   },
-  ambulance: () => {
+  ambulance() {
     playTone(740, 0.16, 0.22, 'sine');
     playTone(540, 0.16, 0.22, 'sine', 0.2);
     playTone(740, 0.16, 0.22, 'sine', 0.4);
     playTone(540, 0.2, 0.22, 'sine', 0.6);
   },
-  spaceSweep: () => {
-    if (!state.ctx) return;
-    const ctx = state.ctx;
-    const t = ctx.currentTime;
-    const osc = ctx.createOscillator();
-    const g = ctx.createGain();
+  spaceSweep() {
+    if (!S.ctx) return;
+    const ctx = S.ctx, t = ctx.currentTime;
+    const osc = ctx.createOscillator(), g = ctx.createGain();
     osc.type = 'sine';
     osc.frequency.setValueAtTime(200, t);
     osc.frequency.exponentialRampToValueAtTime(1800, t + 0.3);
@@ -1765,152 +1918,218 @@ const BEEPS = {
     g.gain.setValueAtTime(0, t);
     g.gain.linearRampToValueAtTime(0.25, t + 0.05);
     g.gain.linearRampToValueAtTime(0, t + 0.6);
-    const delay = ctx.createDelay(0.3);
-    delay.delayTime.value = 0.12;
-    const fb = ctx.createGain();
-    fb.gain.value = 0.4;
-    osc.connect(g);
-    g.connect(ctx.destination);
-    g.connect(delay);
-    delay.connect(fb);
-    fb.connect(delay);
-    delay.connect(ctx.destination);
+    const delay = ctx.createDelay(0.3); delay.delayTime.value = 0.12;
+    const fb = ctx.createGain(); fb.gain.value = 0.4;
+    osc.connect(g); g.connect(ctx.destination);
+    g.connect(delay); delay.connect(fb); fb.connect(delay); delay.connect(ctx.destination);
     osc.start(t); osc.stop(t + 0.7);
   },
-  cockpitChime: () => {
-    // Classic Boeing-style two-tone "ding-dong" chime
-    playTone(932, 0.35, 0.18, 'sine');   // high Bb
-    playTone(698, 0.45, 0.18, 'sine', 0.38); // lower F
+  cockpitChime() {
+    playTone(932, 0.35, 0.18, 'sine');
+    playTone(698, 0.45, 0.18, 'sine', 0.38);
   },
-  spyLock: () => {
-    // 3 quick blips (computer access) then a descending "lock" beep
+  spyLock() {
     playTone(1800, 0.05, 0.14, 'square', 0.00);
     playTone(1800, 0.05, 0.14, 'square', 0.08);
     playTone(1800, 0.05, 0.14, 'square', 0.16);
     playTone(900, 0.18, 0.18, 'sawtooth', 0.26);
     playTone(500, 0.22, 0.20, 'sawtooth', 0.32);
   },
+  /**
+   * SBB station chime. Three motifs on the acronyms SBB-CFF-FFS:
+   *   Es-B-B   C-F-F   F-F-Es
+   * (Es = Eb, B = Bb in German notation.) Played on a vibraphone
+   * voice: sine fundamental + small detuned partial, slight tremolo,
+   * bell-like exponential decay.
+   */
+  sbbChime() { playSbbVibraphone(SBB_CHIME_NOTES); },
 };
 
+/** Equal-tempered pitches (A4=440) used for the SBB chime. */
+const SBB_NOTES = Object.freeze({
+  Eb4: 311.13, Bb4: 466.16, C5: 523.25, F4: 349.23, F5: 698.46, Eb5: 622.25,
+});
+
+/** The canonical "Es-B-B / C-F-F / F-F-Es" sequence, timed like the real chime. */
+const SBB_CHIME_NOTES = Object.freeze([
+  { f: SBB_NOTES.Eb4, t: 0.00, d: 0.55 },  // Es
+  { f: SBB_NOTES.Bb4, t: 0.32, d: 0.55 },  // B
+  { f: SBB_NOTES.Bb4, t: 0.64, d: 0.65 },  // B
+  { f: SBB_NOTES.C5,  t: 1.10, d: 0.55 },  // C
+  { f: SBB_NOTES.F4,  t: 1.42, d: 0.55 },  // F
+  { f: SBB_NOTES.F4,  t: 1.74, d: 0.65 },  // F
+  { f: SBB_NOTES.F5,  t: 2.20, d: 0.55 },  // F
+  { f: SBB_NOTES.F5,  t: 2.52, d: 0.55 },  // F
+  { f: SBB_NOTES.Eb5, t: 2.84, d: 0.95 },  // Es (final, longer sustain)
+]);
+
+/**
+ * Render a vibraphone-like note: sine fundamental mixed with a detuned
+ * second partial, a slow tremolo LFO, and a plucked envelope.
+ */
+function playSbbNote(freq, delay, duration) {
+  const ctx = S.ctx;
+  const start = ctx.currentTime + delay;
+
+  const fund = ctx.createOscillator();
+  fund.type = 'sine';
+  fund.frequency.value = freq;
+
+  const partial = ctx.createOscillator();
+  partial.type = 'sine';
+  partial.frequency.value = freq * 2.01; // slightly detuned octave → bell tone
+
+  const mix = ctx.createGain();
+  mix.gain.value = 0;
+  const partialMix = ctx.createGain();
+  partialMix.gain.value = 0.35;
+
+  // Tremolo LFO (vibraphone motor ~6 Hz)
+  const lfo = ctx.createOscillator();
+  lfo.frequency.value = 6;
+  const lfoDepth = ctx.createGain();
+  lfoDepth.gain.value = 0.15;
+  lfo.connect(lfoDepth);
+  lfoDepth.connect(mix.gain);
+
+  // Plucked envelope: fast attack, exponential decay
+  const peak = 0.28;
+  mix.gain.setValueAtTime(0, start);
+  mix.gain.linearRampToValueAtTime(peak, start + 0.01);
+  mix.gain.exponentialRampToValueAtTime(0.0001, start + duration);
+
+  fund.connect(mix);
+  partial.connect(partialMix);
+  partialMix.connect(mix);
+  mix.connect(ctx.destination);
+
+  fund.start(start);    fund.stop(start + duration + 0.05);
+  partial.start(start); partial.stop(start + duration + 0.05);
+  lfo.start(start);     lfo.stop(start + duration + 0.05);
+}
+
+function playSbbVibraphone(notes) {
+  if (!S.ctx) return;
+  for (const n of notes) playSbbNote(n.f, n.t, n.d);
+}
+
 function playModeBeep() {
-  const fn = BEEPS[MODES[state.mode].beep];
+  const fn = BEEPS[MODES[S.mode].beep];
   if (fn) fn();
 }
 
-// ---- Startup sequence ----
 function playStartupSequence() {
-  if (!state.ctx) return;
+  if (!S.ctx) return;
   playTone(440, 0.08, 0.18, 'square');
   playTone(660, 0.08, 0.18, 'square', 0.1);
   playTone(880, 0.08, 0.18, 'square', 0.2);
   playTone(1320, 0.18, 0.22, 'square', 0.32);
-  setTimeout(() => playSquelchOpen(), 600);
+  setTimeout(playSquelchOpen, 600);
 }
+
 function playShutdownSequence() {
-  if (!state.ctx) return;
+  if (!S.ctx) return;
   playTone(880, 0.1, 0.18, 'square');
   playTone(440, 0.14, 0.18, 'square', 0.12);
   playTone(200, 0.2, 0.16, 'square', 0.28);
 }
 
-// ---- Morse SOS (· · · − − − · · ·) ----
+/** Morse SOS: · · · − − − · · · */
 function playMorseSOS() {
-  if (!state.ctx) return;
+  if (!S.ctx) return;
   const dit = 0.1, dah = 0.3, gap = 0.1, letterGap = 0.25;
   let t = 0;
-  function blip(dur) {
-    playTone(700, dur, 0.28, 'sine', t);
-    t += dur + gap;
-  }
-  // S = dit dit dit
+  const blip = (dur) => { playTone(700, dur, 0.28, 'sine', t); t += dur + gap; };
   for (let i = 0; i < 3; i++) blip(dit);
   t += letterGap - gap;
-  // O = dah dah dah
   for (let i = 0; i < 3; i++) blip(dah);
   t += letterGap - gap;
-  // S = dit dit dit
   for (let i = 0; i < 3; i++) blip(dit);
 }
 
-// ============================================================
-//        VOICE EFFECT CHAIN (outgoing audio processing)
-// ============================================================
+function triggerSOSFlash() {
+  let fl = $('sosFlash');
+  if (!fl) {
+    fl = document.createElement('div');
+    fl.id = 'sosFlash'; fl.className = 'sos-flash';
+    fl.setAttribute('role', 'alert'); fl.setAttribute('aria-live', 'assertive');
+    document.body.appendChild(fl);
+  }
+  fl.classList.remove('active');
+  void fl.offsetWidth;
+  fl.classList.add('active');
+  setTimeout(() => fl.classList.remove('active'), 1600);
+}
+
+
+/* §8 ─── VOICE EFFECT CHAIN (outgoing audio processing) ──────── */
 
 function disposeEffectChain() {
-  if (!state.effectChain) return;
-  try { state.effectChain.nodes.forEach(n => { try { n.disconnect(); if (n.stop) n.stop(); } catch(e) {} }); } catch(e) {}
-  state.effectChain = null;
-  state.outMute = null;
+  if (!S.effectChain) return;
+  try {
+    S.effectChain.nodes.forEach(n => {
+      try { n.disconnect(); if (n.stop) n.stop(); } catch(_) {}
+    });
+  } catch(_) {}
+  S.effectChain = null;
+  S.outMute = null;
 }
 
 function buildEffectChain(effectName) {
-  const ctx = state.ctx;
-  const input = ctx.createGain();   // raw mic source connects here
+  const ctx = S.ctx;
+  const input = ctx.createGain();
   const mute  = ctx.createGain();
-  mute.gain.value = 0;              // start muted (tap-to-talk)
+  mute.gain.value = 0; // start muted (tap-to-talk)
   const output = ctx.createMediaStreamDestination();
-
   const nodes = [input, mute];
   let last = input;
-
-  const connect = (n) => { last.connect(n); last = n; nodes.push(n); };
+  const chain = (n) => { last.connect(n); last = n; nodes.push(n); };
 
   switch (effectName) {
-    case 'NORMAL': {
-      // Raw → mute → output
+    case 'NORMAL':
       break;
-    }
     case 'ROBOTER': {
-      // Ring modulation: multiply signal by a sine wave
-      // Implemented with a GainNode whose gain is the oscillator output
       const carrier = ctx.createOscillator();
-      carrier.frequency.value = 60;
-      carrier.type = 'sine';
+      carrier.frequency.value = 60; carrier.type = 'sine';
       const ringGain = ctx.createGain();
-      ringGain.gain.value = 0;      // overridden by oscillator
-      carrier.connect(ringGain.gain);
-      carrier.start();
-      connect(ringGain);
-      // Add a subtle bandpass to make it sound metallic
+      ringGain.gain.value = 0;
+      carrier.connect(ringGain.gain); carrier.start();
+      chain(ringGain);
       const bp = ctx.createBiquadFilter();
       bp.type = 'bandpass'; bp.frequency.value = 1500; bp.Q.value = 2;
-      connect(bp);
+      chain(bp);
+      nodes.push(carrier);
       break;
     }
     case 'TIEF': {
-      // Low-pass + slight delay + feedback ~ sounds deeper/chunkier
       const lp = ctx.createBiquadFilter();
       lp.type = 'lowpass'; lp.frequency.value = 700; lp.Q.value = 0.6;
-      connect(lp);
+      chain(lp);
       const sat = ctx.createWaveShaper();
       sat.curve = makeDistortionCurve(2.5);
-      connect(sat);
+      chain(sat);
       break;
     }
     case 'HOCH': {
       const hp = ctx.createBiquadFilter();
       hp.type = 'highpass'; hp.frequency.value = 1400;
-      connect(hp);
+      chain(hp);
       const bp = ctx.createBiquadFilter();
       bp.type = 'bandpass'; bp.frequency.value = 2800; bp.Q.value = 1.8;
-      connect(bp);
+      chain(bp);
       break;
     }
     case 'ALIEN': {
-      // Tremolo (LFO on gain) + distortion
       const lfo = ctx.createOscillator();
       lfo.frequency.value = 7;
       const lfoDepth = ctx.createGain();
       lfoDepth.gain.value = 0.5;
       const tremGain = ctx.createGain();
       tremGain.gain.value = 0.4;
-      lfo.connect(lfoDepth);
-      lfoDepth.connect(tremGain.gain);
-      lfo.start();
+      lfo.connect(lfoDepth); lfoDepth.connect(tremGain.gain); lfo.start();
       const dist = ctx.createWaveShaper();
       dist.curve = makeDistortionCurve(5);
-      connect(dist);
-      connect(tremGain);
+      chain(dist); chain(tremGain);
       nodes.push(lfo, lfoDepth);
       break;
     }
@@ -1919,57 +2138,65 @@ function buildEffectChain(effectName) {
   last.connect(mute);
   mute.connect(output);
   nodes.push(output);
-
   return { input, mute, output, nodes };
 }
 
+/**
+ * Make sure we have a live microphone stream. Re-acquires if previous
+ * tracks ended (e.g. after the scanner closed the camera on iOS, which
+ * also invalidates the mic).
+ */
 async function ensureMic() {
-  if (state.rawStream) return;
-  state.rawStream = await navigator.mediaDevices.getUserMedia({
+  if (S.rawStream) {
+    const tracks = S.rawStream.getAudioTracks();
+    if (tracks.length > 0 && tracks[0].readyState === 'live') return;
+    try { S.rawStream.getTracks().forEach(t => t.stop()); } catch(_) {}
+    S.rawStream = null;
+  }
+  S.rawStream = await navigator.mediaDevices.getUserMedia({
     audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
     video: false,
   });
 }
 
 async function rebuildOutgoingStream() {
+  if (!S.powered) return null;
   await initAudio();
   await ensureMic();
+  if (!S.powered) return null;
   disposeEffectChain();
-  const ctx = state.ctx;
-  const chain = buildEffectChain(EFFECTS[state.effect].name);
-  state.effectChain = chain;
-  state.outMute = chain.mute;
-  // Connect raw mic source into the chain's input
-  const src = ctx.createMediaStreamSource(state.rawStream);
+  const ctx = S.ctx;
+  const chain = buildEffectChain(EFFECTS[S.effect].name);
+  S.effectChain = chain;
+  S.outMute = chain.mute;
+  const src = ctx.createMediaStreamSource(S.rawStream);
   src.connect(chain.input);
   chain.nodes.unshift(src);
-  state.outStream = chain.output.stream;
-  // Attach TX analyser for visualizer — tap from mute node (before destination)
-  // chain.output is a MediaStreamAudioDestinationNode (terminal, no output to connect from)
+  S.outStream = chain.output.stream;
   const txA = ctx.createAnalyser();
   txA.fftSize = 512;
   chain.mute.connect(txA);
-  state.txAnalyser = txA;
-  return state.outStream;
+  S.txAnalyser = txA;
+  return S.outStream;
 }
 
-// ============================================================
-//        INCOMING AUDIO PROCESSING (radio effect)
-// ============================================================
+
+/* §9 ─── INCOMING AUDIO PROCESSING (radio effect) ────────────── */
 
 function processRemoteStream(stream) {
-  const ctx = state.ctx;
+  const ctx = S.ctx;
 
-  // Disconnect previous remote audio chain
-  if (state._rxNodes) {
-    state._rxNodes.forEach(n => { try { n.disconnect(); } catch(e) {} });
+  // Disconnect previous RX chain
+  if (S._rxNodes) {
+    S._rxNodes.forEach(n => { try { n.disconnect(); } catch(_) {} });
+    S._rxNodes = null;
   }
 
-  // Attach to a muted <audio> so MediaStreamSource actually produces audio
-  if (state.remoteAudioEl) {
-    try { state.remoteAudioEl.pause(); } catch(e) {}
-    state.remoteAudioEl.srcObject = null;
-    state.remoteAudioEl.remove();
+  // Hidden <audio> element — required for MediaStreamSource to produce audio
+  if (S.remoteAudioEl) {
+    try { S.remoteAudioEl.pause(); } catch(_) {}
+    S.remoteAudioEl.srcObject = null;
+    S.remoteAudioEl.remove();
   }
   const audioEl = document.createElement('audio');
   audioEl.srcObject = stream;
@@ -1977,28 +2204,26 @@ function processRemoteStream(stream) {
   audioEl.muted = true;
   audioEl.playsInline = true;
   document.body.appendChild(audioEl);
-  state.remoteAudioEl = audioEl;
+  S.remoteAudioEl = audioEl;
 
   const source = ctx.createMediaStreamSource(stream);
-  const m = MODES[state.mode].audio;
+  const m = MODES[S.mode].audio;
 
   const hs = ctx.createBiquadFilter();
   hs.type = 'highpass'; hs.frequency.value = m.highpass;
 
   const bp = ctx.createBiquadFilter();
-  bp.type = 'bandpass';
-  bp.frequency.value = m.freq;
-  bp.Q.value = m.q;
-  state.rxFilter = bp;
+  bp.type = 'bandpass'; bp.frequency.value = m.freq; bp.Q.value = m.q;
+  S.rxFilter = bp;
 
   const dist = ctx.createWaveShaper();
   dist.curve = makeDistortionCurve(m.dist);
   dist.oversample = '2x';
-  state.rxDistortion = dist;
+  S.rxDistortion = dist;
 
   const analyser = ctx.createAnalyser();
   analyser.fftSize = 512;
-  state.rxAnalyser = analyser;
+  S.rxAnalyser = analyser;
 
   const g = ctx.createGain();
   g.gain.value = 1.6;
@@ -2010,46 +2235,46 @@ function processRemoteStream(stream) {
   analyser.connect(g);
   g.connect(ctx.destination);
 
-  state._rxNodes = [source, hs, bp, dist, analyser, g];
+  S._rxNodes = [source, hs, bp, dist, analyser, g];
 }
 
-// ============================================================
-//                    VISUALIZER (canvas)
-// ============================================================
+/* §10 ─── VISUALIZER (canvas radial bars) ────────────────────── */
 
 function setupViz() {
-  const cv = els.vizCanvas;
+  const cv = dom.vizCanvas;
+  if (!cv) return;
   const dpr = window.devicePixelRatio || 1;
+
   function resize() {
     const r = cv.getBoundingClientRect();
     cv.width  = Math.max(1, Math.floor(r.width * dpr));
     cv.height = Math.max(1, Math.floor(r.height * dpr));
   }
   resize();
-  state._vizResizeHandler = resize;
+  S._vizResizeHandler = resize;
   window.addEventListener('resize', resize);
+
   const ctx2d = cv.getContext('2d');
 
   function draw() {
-    state._vizRafId = requestAnimationFrame(draw);
+    S._vizRafId = requestAnimationFrame(draw);
+    // Skip invisible canvas (power-off transition, hidden modal)
+    if (cv.offsetParent === null) return;
     const w = cv.width, h = cv.height;
     ctx2d.clearRect(0, 0, w, h);
 
-    // Choose which analyser to read from
-    const analyser = state.transmitting ? state.txAnalyser : state.rxAnalyser;
+    const analyser = S.transmitting ? S.txAnalyser : S.rxAnalyser;
     let dataArr = null;
     if (analyser) {
       dataArr = new Uint8Array(analyser.frequencyBinCount);
       analyser.getByteFrequencyData(dataArr);
     }
 
-    // Read CSS variable for glow color
     const style = getComputedStyle(document.body);
     const primary = style.getPropertyValue('--primary').trim() || '#2a6fff';
-    const accent = style.getPropertyValue('--accent').trim() || '#ff2a3a';
-    const col = state.transmitting ? accent : primary;
+    const accent  = style.getPropertyValue('--accent').trim()  || '#ff2a3a';
+    const col = S.transmitting ? accent : primary;
 
-    // Draw radial bar visualizer from bottom center
     const cx = w / 2;
     const cy = h * 0.92;
     const bars = 48;
@@ -2057,12 +2282,12 @@ function setupViz() {
 
     ctx2d.strokeStyle = col;
     ctx2d.shadowColor = col;
-    ctx2d.shadowBlur = 8 * dpr;
-    ctx2d.lineWidth = Math.max(1.5, 3 * dpr);
-    ctx2d.lineCap = 'round';
+    ctx2d.shadowBlur  = 8 * dpr;
+    ctx2d.lineWidth   = Math.max(1.5, 3 * dpr);
+    ctx2d.lineCap     = 'round';
 
     for (let i = 0; i < bars; i++) {
-      const a = Math.PI + (i / (bars - 1)) * Math.PI; // top half arc (π .. 2π)
+      const a = Math.PI + (i / (bars - 1)) * Math.PI;
       let v = 0;
       if (dataArr) v = dataArr[Math.floor((i / bars) * dataArr.length * 0.7)] / 255;
       else v = 0.05 + Math.sin(performance.now() * 0.002 + i * 0.35) * 0.04 + Math.random() * 0.03;
@@ -2085,46 +2310,26 @@ function setupViz() {
   draw();
 }
 
-// ============================================================
-//                    PEERJS / WEBRTC
-// ============================================================
 
-// ---- TURN / STUN ----
-// Metered.ca Free-Tier: 20 GB/Monat, frische Credentials per REST-API.
-// 1) Gratis-Account auf https://www.metered.ca/signup anlegen.
-// 2) Im Dashboard → "TURN Server" → App-Name + API-Key kopieren.
-// 3) Hier eintragen:
-const METERED_APP  = 'kidcomm3000';
-const METERED_KEY  = '2b1eb045790c6ef8269fa5ea5e137da9ada9';
+/* §11 ─── PEERJS / WEBRTC ────────────────────────────────────── */
 
-// Fallback STUN servers (always work for same-network P2P).
-// TURN from Metered API is fetched dynamically on power-on.
-const BASE_ICE = [
-  { urls: 'stun:stun.l.google.com:19302' },
-  { urls: 'stun:stun1.l.google.com:19302' },
-  { urls: 'stun:stun2.l.google.com:19302' },
-  { urls: 'stun:stun3.l.google.com:19302' },
-  { urls: 'stun:stun4.l.google.com:19302' },
-  { urls: 'stun:stun.cloudflare.com:3478' },
-];
+let ICE_SERVERS = [...BASE_ICE];
+let _turnFetchedAt = 0;
 
-// Holt frische TURN-Credentials von Metered. Gibt iceServers-Array zurück
-// oder leeres Array wenn kein Key konfiguriert / API nicht erreichbar.
 async function fetchTurnServers() {
-  if (!METERED_APP || !METERED_KEY) {
-    console.warn('[TURN] Kein Metered-API-Key → nur STUN (P2P). Für Mobilfunk/CGNAT: metered.ca/signup');
+  if (!TURN_CONFIG.app || !TURN_CONFIG.key) {
+    console.warn('[TURN] Kein Metered-API-Key → nur STUN');
     return [];
   }
-  // Try two different URL patterns (Metered has changed their API URL format over time)
   const urls = [
-    'https://' + METERED_APP + '.metered.live/api/v1/turn/credentials?apiKey=' + METERED_KEY,
-    'https://global.metered.live/api/v1/turn/credentials?apiKey=' + METERED_KEY,
+    'https://' + TURN_CONFIG.app + '.metered.live/api/v1/turn/credentials?apiKey=' + TURN_CONFIG.key,
+    'https://global.metered.live/api/v1/turn/credentials?apiKey=' + TURN_CONFIG.key,
   ];
   for (const url of urls) {
     try {
       console.log('[TURN] Trying:', url.substring(0, 60) + '…');
-      const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
-      if (!res.ok) { console.warn('[TURN] HTTP', res.status, 'from', url); continue; }
+      const res = await fetch(url, { signal: AbortSignal.timeout(TIMING.turnFetchTimeout) });
+      if (!res.ok) { console.warn('[TURN] HTTP', res.status); continue; }
       const servers = await res.json();
       if (Array.isArray(servers) && servers.length > 0) {
         console.log('[TURN] Got', servers.length, 'TURN servers');
@@ -2134,95 +2339,147 @@ async function fetchTurnServers() {
       console.warn('[TURN] Fetch failed:', url.split('?')[0], e.name || '', e.message || '');
     }
   }
-  console.error('[TURN] All TURN endpoints failed — using STUN only');
+  console.error('[TURN] All endpoints failed — STUN only');
   toast('TURN nicht erreichbar – VPN aus?');
   return [];
 }
 
-let ICE_SERVERS = [...BASE_ICE]; // will be enriched with TURN on power-on
-let _turnFetchedAt = 0;          // timestamp of last TURN fetch
-const TURN_MAX_AGE = 10 * 60 * 1000; // refresh TURN every 10 min (credentials TTL varies)
-
-// Refresh TURN credentials if they're older than TURN_MAX_AGE.
-// Returns a promise that resolves when ICE_SERVERS is up-to-date.
+/**
+ * Refresh TURN credentials if older than TIMING.turnMaxAge.
+ * Returns true when ICE_SERVERS was replaced with a new list — the caller
+ * must then recreate any existing peer so the new credentials take effect
+ * (PeerJS captures iceServers at RTCPeerConnection creation time).
+ */
 async function refreshTurnIfNeeded() {
-  if (Date.now() - _turnFetchedAt < TURN_MAX_AGE) return; // still fresh
-  console.log('[TURN] Credentials older than', TURN_MAX_AGE / 60000, 'min — refreshing');
+  if (Date.now() - _turnFetchedAt < TIMING.turnMaxAge) return false;
+  console.log('[TURN] Credentials stale — refreshing');
   try {
     const turnServers = await fetchTurnServers();
     ICE_SERVERS = [...BASE_ICE, ...turnServers];
     _turnFetchedAt = Date.now();
     console.log('[TURN] Refreshed, total ICE servers:', ICE_SERVERS.length);
+    return true;
   } catch (e) {
     console.warn('[TURN] Refresh failed:', e.message);
+    return false;
   }
 }
 
-// Full peer reinit: destroy old peer and create a fresh one with fresh TURN.
-// Used when the PeerJS broker is irrecoverably broken after multiple failures.
+/**
+ * After a call connects, inspect getStats() and log which candidate pair
+ * won the ICE race. Critical for diagnosing WLAN↔cellular problems:
+ *   host ↔ host    — same network
+ *   srflx ↔ srflx  — direct via STUN, one NAT on each side
+ *   relay ↔ *      — going through TURN (mandatory for symmetric-NAT mobile)
+ * If we see "No relay candidates gathered" we know TURN never came up.
+ */
+function reportIceDiagnostics(pc) {
+  if (!pc.getStats) return;
+  pc.getStats(null).then((stats) => {
+    let nominated = null;
+    let localRelayGathered = false;
+    stats.forEach((r) => {
+      if (r.type === 'candidate-pair' && r.state === 'succeeded' && r.nominated) {
+        nominated = {
+          local:  stats.get(r.localCandidateId),
+          remote: stats.get(r.remoteCandidateId),
+        };
+      }
+      if (r.type === 'local-candidate' && r.candidateType === 'relay') {
+        localRelayGathered = true;
+      }
+    });
+    if (nominated) {
+      const lt = nominated.local  && nominated.local.candidateType  || '?';
+      const rt = nominated.remote && nominated.remote.candidateType || '?';
+      const proto = nominated.local && nominated.local.protocol;
+      console.log('[ICE pair]', lt, '→', rt, proto ? '(' + proto + ')' : '');
+      if (lt === 'relay' || rt === 'relay') {
+        toast('Verbindung über TURN-Relay');
+      }
+    }
+    if (!localRelayGathered) {
+      console.warn('[ICE] No relay candidates gathered — TURN unreachable. WLAN↔Mobilfunk may fail.');
+    }
+  }).catch((e) => console.warn('[ICE] getStats failed:', e.message));
+}
+
+/**
+ * Create a PeerJS Peer with the current ICE servers and sensible defaults.
+ * Centralised so iceCandidatePoolSize + iceServers stay in sync everywhere.
+ *
+ * `iceCandidatePoolSize: 4` pre-gathers candidates when the Peer is created,
+ * so the first call/answer doesn't pay full ICE-gathering latency. 4 is
+ * enough for STUN + TURN UDP/TCP without wasting bandwidth.
+ */
+function createPeer(id) {
+  return new Peer(id || undefined, {
+    debug: 1,
+    config: {
+      iceServers: ICE_SERVERS,
+      iceCandidatePoolSize: 4,
+    },
+  });
+}
+
 async function fullPeerReinit() {
   console.log('[Peer] Full reinit — destroying old peer, refreshing TURN');
-  // Destroy old peer completely
-  if (state.peer) {
-    try { state.peer.destroy(); } catch(_) {}
-    state.peer = null;
+  if (S.peer) {
+    try { S.peer.destroy(); } catch(_) {}
+    S.peer = null;
   }
-  state.call = null;
-  state.conn = null;
-  state.connected = false;
+  S.call = null;
+  S.conn = null;
+  S.connected = false;
   _unavailableIdRetries = 0;
-  // Force-refresh TURN (ignore cache age)
   _turnFetchedAt = 0;
   await refreshTurnIfNeeded();
-  // Create brand-new peer
   initPeer();
   return waitForPeerOpen(8000);
 }
 
-function isPeerReady() { return !!(state.peer && state.myId && !state.peer.disconnected && !state.peer.destroyed); }
+function isPeerReady() {
+  return !!(S.peer && S.myId && !S.peer.disconnected && !S.peer.destroyed);
+}
 
 let _unavailableIdRetries = 0;
 let _brokerReconnectTimer = null;
 let _lastBrokerDisconnect = 0;
-let _usingTempId = false; // true when we fell back to a suffixed temp ID
+let _usingTempId = false;
 
 function bindPeerEvents(peer) {
   peer.on('open', (id) => {
-    state.myId = id;
-    // Only persist the ID if it's NOT a temporary suffixed one
-    if (!_usingTempId) {
-      store.set(STORE.myId, id);
-    }
-    _unavailableIdRetries = 0; // reset on successful open
+    S.myId = id;
+    if (!_usingTempId) store.set(STORAGE_KEYS.myId, id);
+    _unavailableIdRetries = 0;
     setConn('ready');
     toast('Funkgerät bereit · SIG OK');
-    els.sigTag.textContent = 'SIG: READY';
+    dom.sigTag.textContent = 'SIG: READY';
 
-    // Auto-reconnect to last partner exactly once per power-on
-    if (state.partnerId && state.partnerId !== id && !state.autoConnectTried) {
-      state.autoConnectTried = true;
+    if (S.partnerId && S.partnerId !== id && !S.autoConnectTried) {
+      S.autoConnectTried = true;
       toast('🔄 Verbinde mit letztem Partner…');
-      setTimeout(() => connectToPeer(state.partnerId), 800);
+      setTimeout(() => connectToPeer(S.partnerId), 800);
     }
   });
 
   peer.on('call', async (incoming) => {
     console.log('[Peer] Incoming call from', incoming.peer);
-    if (state.peer !== peer) return; // stale peer
+    if (S.peer !== peer) return;
     try {
-      if (state.call) {
+      if (S.call) {
         console.log('[Peer] Closing old call before accepting new');
-        try { state.call.close(); } catch(_) {}
-        state.call = null;
+        try { S.call.close(); } catch(_) {}
+        S.call = null;
       }
       const stream = await rebuildOutgoingStream();
       if (!stream) { toast('Mikrofon-Fehler'); return; }
       incoming.answer(stream);
-      state.call = incoming;
+      S.call = incoming;
       bindCall(incoming);
-      if (incoming.peer && incoming.peer !== state.myId) {
-        state.partnerId = incoming.peer;
-        store.set(STORE.partner, incoming.peer);
+      if (incoming.peer && incoming.peer !== S.myId) {
+        S.partnerId = incoming.peer;
+        store.set(STORAGE_KEYS.partner, incoming.peer);
       }
     } catch (e) {
       console.error(e); toast('Mikrofon verweigert');
@@ -2231,63 +2488,54 @@ function bindPeerEvents(peer) {
 
   peer.on('connection', (dc) => {
     console.log('[Peer] Incoming DataChannel from', dc.peer);
-    if (state.peer !== peer) return; // stale peer
-    if (state.conn) {
-      try { state.conn.close(); } catch(_) {}
-    }
-    state.conn = dc; bindDataConn(dc);
-    if (dc.peer && dc.peer !== state.myId) {
-      state.partnerId = dc.peer;
-      store.set(STORE.partner, dc.peer);
+    if (S.peer !== peer) return;
+    if (S.conn) { try { S.conn.close(); } catch(_) {} }
+    S.conn = dc;
+    bindDataConn(dc);
+    if (dc.peer && dc.peer !== S.myId) {
+      S.partnerId = dc.peer;
+      store.set(STORAGE_KEYS.partner, dc.peer);
     }
   });
 
   peer.on('error', (err) => {
     console.error('peer err', err);
     if (err.type === 'unavailable-id') {
-      // Our saved ID is still "taken" on the broker (stale session from before sleep).
-      // Strategy: 3 quick retries with same ID, then use a temporary suffixed ID
-      // so we're online immediately. Keep original ID stored for next power cycle.
+      // After background/sleep the broker holds the previous session for
+      // ~30–60s. Retry patiently so we reclaim our original ID — a temp ID
+      // would break auto-reconnect because the partner cannot find us.
       _unavailableIdRetries++;
       try { peer.destroy(); } catch(_) {}
-      if (state.peer === peer) state.peer = null;
-      if (_unavailableIdRetries <= 3) {
-        const delay = _unavailableIdRetries * 1000;
-        console.log('[Peer] ID unavailable, retry', _unavailableIdRetries, 'in', delay, 'ms');
-        toast('Verbinde…');
+      if (S.peer === peer) S.peer = null;
+      if (_unavailableIdRetries <= TIMING.unavailableIdRetries) {
+        const delay = Math.min(_unavailableIdRetries * TIMING.unavailableIdStep, TIMING.unavailableIdMax);
+        console.log('[Peer] ID unavailable, retry', _unavailableIdRetries, '/' + TIMING.unavailableIdRetries, 'in', delay, 'ms');
+        if (_unavailableIdRetries === 1) toast('Signal neu aufbauen…');
+        else if (_unavailableIdRetries === 5) toast('Warte auf Broker-Freigabe…');
         _usingTempId = false;
-        setTimeout(() => initPeer(false), delay);
+        setTimeout(() => { if (S.powered) initPeer(false); }, delay);
       } else {
-        // After 3 quick retries (~6s), use a temporary suffixed ID so we come
-        // online immediately. The original ID stays in storage for next time.
-        const baseId = store.get(STORE.myId);
+        const baseId = store.get(STORAGE_KEYS.myId);
         const tempId = baseId ? baseId + '-' + Date.now().toString(36).slice(-4) : null;
-        console.warn('[Peer] ID still unavailable after 3 retries — using temp ID:', tempId);
-        toast('Verbinde mit neuem Signal…');
+        console.warn('[Peer] Using temp ID after', TIMING.unavailableIdRetries, 'retries:', tempId);
+        toast('Temporäres Signal – Partner muss erneut scannen');
         _usingTempId = true;
-        state.peer = new Peer(tempId || undefined, {
-          debug: 1,
-          config: { iceServers: ICE_SERVERS },
-        });
+        S.peer = createPeer(tempId);
         _unavailableIdRetries = 0;
-        bindPeerEvents(state.peer);
+        bindPeerEvents(S.peer);
       }
       return;
     }
-    if (state.peer !== peer) return; // stale peer error
+    if (S.peer !== peer) return;
     if (err.type === 'peer-unavailable') {
-      if (state.partnerId && !state.connected) {
+      if (S.partnerId && !S.connected) {
         _reconnectAttempt++;
-        const delay = Math.min(5000 + _reconnectAttempt * 2000, 20000);
-        console.log('[Peer] Partner unavailable — retry', _reconnectAttempt, 'in', Math.round(delay/1000), 's');
-        if (_reconnectAttempt <= 3) {
-          toast('Partner offline – Versuch in ' + Math.round(delay / 1000) + 's…');
-        }
+        const delay = Math.min(5000 + _reconnectAttempt * 2000, TIMING.reconnectMax);
+        console.log('[Peer] Partner unavailable — retry', _reconnectAttempt, 'in', Math.round(delay / 1000), 's');
+        if (_reconnectAttempt <= 3) toast('Partner offline – Versuch in ' + Math.round(delay / 1000) + 's…');
         setConn('ready');
         setTimeout(() => {
-          if (state.partnerId && !state.connected && isPeerReady()) {
-            connectToPeer(state.partnerId);
-          }
+          if (S.partnerId && !S.connected && isPeerReady()) connectToPeer(S.partnerId);
         }, delay);
       } else {
         toast('Kein Gerät unter diesem Code'); setConn('ready');
@@ -2301,24 +2549,17 @@ function bindPeerEvents(peer) {
   peer.on('disconnected', () => {
     console.log('[Peer] Broker disconnected');
     setConn('ready');
-    if (!state.powered) return;
-    if (state.peer !== peer) return; // stale peer
-
+    if (!S.powered || S.peer !== peer) return;
     const now = Date.now();
-    if (now - _lastBrokerDisconnect < 5000) {
-      console.log('[Peer] Broker disconnect throttled');
-      return;
-    }
+    if (now - _lastBrokerDisconnect < 5000) { console.log('[Peer] Throttled'); return; }
     _lastBrokerDisconnect = now;
-
     clearTimeout(_brokerReconnectTimer);
     try { peer.reconnect(); } catch(_) {}
-
     _brokerReconnectTimer = setTimeout(() => {
-      if (state.powered && state.peer === peer && (peer.disconnected || peer.destroyed)) {
+      if (S.powered && S.peer === peer && (peer.disconnected || peer.destroyed)) {
         console.log('[Peer] Broker dead after 8s — full reinit');
         fullPeerReinit().then(() => {
-          if (state.partnerId && !state.connected) scheduleReconnect(1000);
+          if (S.partnerId && !S.connected) scheduleReconnect(1000);
         });
       }
     }, 8000);
@@ -2326,371 +2567,117 @@ function bindPeerEvents(peer) {
 }
 
 function initPeer(forceFreshId = false) {
-  // Use a stable, persistent ID so the saved partner can find us across sessions.
-  let savedId = forceFreshId ? null : store.get(STORE.myId);
+  let savedId = forceFreshId ? null : store.get(STORAGE_KEYS.myId);
   if (savedId && !/^[A-Za-z0-9_-]{1,40}$/.test(savedId)) savedId = null;
-
-  state.partnerId = store.get(STORE.partner);
-  state.autoConnectTried = false;
+  S.partnerId = store.get(STORAGE_KEYS.partner);
+  S.autoConnectTried = false;
   _usingTempId = false;
-
-  state.peer = new Peer(savedId || undefined, {
-    debug: 1,
-    config: { iceServers: ICE_SERVERS },
-  });
-
-  bindPeerEvents(state.peer);
+  S.peer = createPeer(savedId);
+  bindPeerEvents(S.peer);
 }
 
 function bindCall(call) {
   call.on('stream', (remoteStream) => {
-    clearTimeout(state._safetyTimeout);
-    state.remoteStream = remoteStream;
+    clearTimeout(S._safetyTimeout);
+    S.remoteStream = remoteStream;
     processRemoteStream(remoteStream);
-    state.connected = true;
+    S.connected = true;
     _isReconnecting = false;
     _reconnectAttempt = 0;
     setConn('connected');
     setTalk('on');
-    els.sigTag.textContent = 'SIG: ████';
+    dom.sigTag.textContent = 'SIG: ████';
     playSquelchOpen();
     toast('Verbunden!');
-    // Activate all keep-alive layers (WakeLock + WebLock + silent audio)
     acquireAllKeepAlives();
-    // Reset teardown counter after stable connection (30s without drop)
-    clearTimeout(state._stabilityTimer);
-    state._stabilityTimer = setTimeout(() => {
-      if (state.connected) {
-        _teardownCount = 0;
-        console.log('[Reconnect] Connection stable for 30s — teardown counter reset');
-      }
-    }, 30000);
-    // Immediately share our position so the compass activates on both sides
-    if (state.myPos && state.conn && state.conn.open) {
-      try { const _pm = { type: 'pos', lat: state.myPos.lat, lng: state.myPos.lng }; if (state._posIsIPBased) _pm.ip = true; state.conn.send(_pm); } catch(_) {}
+    clearTimeout(S._stabilityTimer);
+    S._stabilityTimer = setTimeout(() => {
+      if (S.connected) { _teardownCount = 0; console.log('[Reconnect] Stable 30s — counter reset'); }
+    }, TIMING.stabilityWindow);
+    if (S.myPos && S.conn && S.conn.open) {
+      try { const m = { type: 'pos', lat: S.myPos.lat, lng: S.myPos.lng }; if (S._posIsIPBased) m.ip = true; S.conn.send(m); } catch(_) {}
     }
   });
+
   call.on('close', () => {
-    // CRITICAL: If state.call has been replaced (e.g. by an incoming call),
-    // this is the OLD call closing — do NOT teardown the new connection!
-    if (state.call && state.call !== call) {
-      console.log('[Call] Old call closed (replaced by new) — ignoring');
-      return;
-    }
-    const wasConnected = state.connected;
+    if (S.call && S.call !== call) { console.log('[Call] Old call closed — ignoring'); return; }
+    const wasConnected = S.connected;
     playSquelchClose();
-    // Auto-reconnect if the connection dropped unexpectedly (not user power-off)
-    if (wasConnected && state.powered && state.partnerId) {
+    if (wasConnected && S.powered && S.partnerId) {
       teardownAndReconnect();
     } else {
-      state.connected = false;
-      state.call = null;
-      setConn('ready');
-      setTalk('off');
-      stopTransmit();
-      stopHeartbeat();
-      els.sigTag.textContent = 'SIG: READY';
+      S.connected = false; S.call = null;
+      setConn('ready'); setTalk('off');
+      stopTransmit(); stopHeartbeat();
+      dom.sigTag.textContent = 'SIG: READY';
       toast('Getrennt');
     }
   });
+
   call.on('error', (e) => { console.error(e); toast('Call-Fehler: ' + (e && e.message || e)); });
 
-  // ICE / connection diagnostics + auto-recovery on network change
   const pc = call.peerConnection;
   if (pc) {
     pc.addEventListener('iceconnectionstatechange', () => {
       console.log('[ICE]', pc.iceConnectionState);
-      // Ignore ICE events from replaced calls
-      if (state.call && state.call !== call) return;
+      if (S.call && S.call !== call) return;
       if (pc.iceConnectionState === 'failed') {
         console.log('[ICE] Failed — full reconnect');
         toast('Verbindung verloren – verbinde neu…');
         teardownAndReconnect();
       } else if (pc.iceConnectionState === 'disconnected') {
-        els.sigTag.textContent = 'SIG: ░░░░';
+        dom.sigTag.textContent = 'SIG: ░░░░';
         toast('Signal unterbrochen…');
-        // Give ICE 15s to self-recover (mobile networks need more time).
-        // If not recovered, force reconnect.
         clearTimeout(pc._disconnectTimer);
         pc._disconnectTimer = setTimeout(() => {
-          if (state.call && state.call.peerConnection !== pc) return; // stale timer
+          if (S.call && S.call.peerConnection !== pc) return;
           if (pc.iceConnectionState === 'disconnected') {
-            console.log('[ICE] Stuck in disconnected for 15s — forcing reconnect');
+            console.log('[ICE] Stuck disconnected 15s — forcing reconnect');
             teardownAndReconnect();
           }
-        }, 15000);
+        }, TIMING.iceDisconnectTimeout);
       } else if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed') {
         clearTimeout(pc._disconnectTimer);
-        els.sigTag.textContent = 'SIG: ████';
-        if (pc.getStats) pc.getStats(null).then((stats) => {
-          stats.forEach((r) => {
-            if (r.type === 'candidate-pair' && r.state === 'succeeded' && r.nominated) {
-              const local  = stats.get(r.localCandidateId);
-              const remote = stats.get(r.remoteCandidateId);
-              console.log('[ICE pair]', local && local.candidateType, '->', remote && remote.candidateType);
-            }
-          });
-        }).catch(() => {});
+        dom.sigTag.textContent = 'SIG: ████';
+        reportIceDiagnostics(pc);
       }
     });
   }
 }
 
-// ---- Full teardown + reconnect (safe, avoids partial state) ----
-let _isReconnecting = false;
-let _lastTeardownTime = 0;
-let _teardownCount = 0;
-
-function teardownAndReconnect() {
-  if (_isReconnecting || !state.powered || !state.partnerId) return;
-
-  // Cooldown: prevent reconnect storms. If we've torn down 3+ times in 60s, back off hard.
-  const now = Date.now();
-  if (now - _lastTeardownTime < 10000) {
-    _teardownCount++;
-  } else {
-    _teardownCount = 1;
-  }
-  _lastTeardownTime = now;
-
-  if (_teardownCount > 3) {
-    const backoff = Math.min(_teardownCount * 5000, 30000);
-    console.log('[Reconnect] Too many teardowns (' + _teardownCount + ') — backing off', backoff, 'ms');
-    toast('Instabil – warte ' + Math.round(backoff / 1000) + 's…');
-    els.sigTag.textContent = 'SIG: ⏳';
-    setTimeout(async () => {
-      _teardownCount = 0;
-      _isReconnecting = false;
-      if (!state.connected && state.powered && state.partnerId) {
-        // After backoff, do a full peer reinit — the old peer is probably broken
-        console.log('[Reconnect] Post-backoff: full peer reinit');
-        await fullPeerReinit();
-        if (state.partnerId && !state.connected) scheduleReconnect(500);
-      }
-    }, backoff);
-    return;
-  }
-
-  _isReconnecting = true;
-  console.log('[Reconnect] Teardown #' + _teardownCount + ' started');
-
-  // 1) Close everything cleanly
-  stopHeartbeat();
-  stopTransmit();
-  clearTimeout(_reconnectTimer);
-  if (state.call) { try { state.call.close(); } catch(_) {} }
-  if (state.conn) { try { state.conn.close(); } catch(_) {} }
-  state.call = null;
-  state.conn = null;
-  state.connected = false;
-  setConn('ready');
-  setTalk('off');
-
-  // 2) Decide who initiates: only the peer with the "lower" ID calls.
-  //    The other side waits for the incoming call. This prevents both sides
-  //    from calling each other simultaneously (race condition).
-  const iAmCaller = state.myId < state.partnerId;
-  // Delay increases with teardown count to let things settle
-  const baseDelay = iAmCaller ? 3000 : 1500;
-  const delay = baseDelay + (_teardownCount * 1000);
-
-  toast(iAmCaller ? 'Verbinde neu…' : 'Warte auf Partner…');
-  els.sigTag.textContent = 'SIG: ░░░░';
-
-  setTimeout(() => {
-    if (!state.powered) { _isReconnecting = false; return; }
-    _isReconnecting = false;
-    if (!state.powered || state.connected) return;
-    if (iAmCaller) {
-      scheduleReconnect(0);
-    } else {
-      // Receiver: if no incoming call arrives within 15s, try connecting ourselves
-      setTimeout(() => {
-        if (!state.connected && state.powered && state.partnerId) {
-          console.log('[Reconnect] No incoming call after 15s — trying as caller');
-          scheduleReconnect(0);
-        }
-      }, 15000);
-    }
-  }, delay);
-}
-
-// ---- Auto-reconnect scheduler ----
-let _reconnectTimer = null;
-let _reconnectAttempt = 0;
-function scheduleReconnect(delayMs) {
-  clearTimeout(_reconnectTimer);
-  _reconnectTimer = null;
-  _reconnectTimer = setTimeout(async () => {
-    if (!state.powered || state.connected) { _reconnectAttempt = 0; return; }
-    if (!state.partnerId) return;
-    _reconnectAttempt++;
-    console.log('[Reconnect] Attempt', _reconnectAttempt);
-
-    // After 5 failed attempts: full peer reinit with fresh TURN
-    // This fixes the case where PeerJS broker state becomes corrupt
-    if (_reconnectAttempt >= 5 && _reconnectAttempt % 5 === 0) {
-      console.log('[Reconnect] 5+ failures — full peer reinit with fresh TURN');
-      toast('Peer-Server neu verbinden…');
-      const ok = await fullPeerReinit();
-      if (!ok) {
-        console.warn('[Reconnect] Full reinit failed — retrying in 10s');
-        scheduleReconnect(10000);
-        return;
-      }
-      // After successful reinit, try connecting
-      if (state.partnerId && !state.connected) {
-        connectToPeer(state.partnerId);
-      }
-    } else {
-      // Refresh TURN if stale (but don't do full reinit)
-      await refreshTurnIfNeeded();
-      // Update ICE config on existing peer if possible
-      if (state.peer && state.peer.options) {
-        state.peer.options.config = { iceServers: ICE_SERVERS };
-      }
-
-      // Ensure broker is alive
-      if (!state.peer || state.peer.disconnected || state.peer.destroyed) {
-        initPeer();
-        setTimeout(() => {
-          if (state.partnerId && !state.connected) connectToPeer(state.partnerId);
-        }, 2000);
-      } else {
-        connectToPeer(state.partnerId);
-      }
-    }
-
-    // If this attempt doesn't work, try again with backoff (max 20s)
-    const nextDelay = Math.min(3000 * _reconnectAttempt, 20000);
-    setTimeout(() => {
-      if (!state.connected && state.powered && state.partnerId) {
-        console.log('[Reconnect] Attempt', _reconnectAttempt, 'seems stale — retrying in', nextDelay, 'ms');
-        scheduleReconnect(nextDelay);
-      } else {
-        _reconnectAttempt = 0;
-      }
-    }, 12000);
-  }, delayMs);
-}
-
-// ---- DataChannel heartbeat — detects dead connections even when ICE doesn't notice ----
-let _heartbeatInterval = null;
-let _lastPong = 0;
-
-function startHeartbeat() {
-  stopHeartbeat();
-  _lastPong = Date.now();
-  _heartbeatInterval = setInterval(() => {
-    if (!state.conn || !state.conn.open) { stopHeartbeat(); return; }
-    // Send ping
-    try { state.conn.send({ type: 'ping' }); } catch(_) {}
-    // Check if we got a pong recently (within 35s — generous for mobile)
-    if (Date.now() - _lastPong > 35000 && state.connected) {
-      console.log('[Heartbeat] No pong for 35s — connection dead');
-      toast('Verbindung tot – verbinde neu…');
-      stopHeartbeat();
-      teardownAndReconnect();
-    }
-  }, 8000); // ping every 8s
-}
-
-function stopHeartbeat() {
-  if (_heartbeatInterval) { clearInterval(_heartbeatInterval); _heartbeatInterval = null; }
-}
-
-function bindDataConn(dc) {
-  dc.on('open', () => {
-    // Send own position immediately so partner compass works right away
-    if (state.myPos) {
-      try { const _pm = { type: 'pos', lat: state.myPos.lat, lng: state.myPos.lng }; if (state._posIsIPBased) _pm.ip = true; dc.send(_pm); } catch(_) {}
-    }
-    // Start heartbeat once DataChannel is open
-    startHeartbeat();
-  });
-  dc.on('data', (msg) => {
-    try {
-      const obj = (typeof msg === 'string') ? JSON.parse(msg) : msg;
-      // Heartbeat ping/pong
-      if (obj.type === 'ping') {
-        try { dc.send({ type: 'pong' }); } catch(_) {}
-        return;
-      }
-      if (obj.type === 'pong') {
-        _lastPong = Date.now();
-        return;
-      }
-      if (obj.type === 'ring') {
-        playModeBeep();
-        toast('📢 RUF empfangen');
-        if (navigator.vibrate) navigator.vibrate([60, 40, 60]);
-      } else if (obj.type === 'mode') {
-        state.mode = obj.mode;
-        applyMode(false);
-      } else if (obj.type === 'sos') {
-        playMorseSOS();
-        triggerSOSFlash();
-        toast('🆘 SOS empfangen');
-        if (navigator.vibrate) navigator.vibrate([120, 80, 120, 80, 120]);
-      } else if (obj.type === 'pos' && typeof obj.lat === 'number') {
-        state.partnerPos = { lat: obj.lat, lng: obj.lng };
-        state._partnerPosIsIPBased = !!obj.ip; // partner flags IP-based position
-        updateCompass();
-      }
-    } catch(e) { console.error(e); }
-  });
-  dc.on('close', () => {
-    // Only clear state if THIS dc is still the active one (not replaced by a new connection)
-    if (state.conn === dc || !state.conn) {
-      state.conn = null;
-      stopHeartbeat();
-    } else {
-      console.log('[DC] Old DataChannel closed (replaced by new) — ignoring');
-    }
-  });
-}
-
 function waitForPeerOpen(timeoutMs = 6000) {
   if (isPeerReady()) return Promise.resolve(true);
-  if (!state.peer) return Promise.resolve(false);
+  if (!S.peer) return Promise.resolve(false);
   return new Promise((resolve) => {
     let done = false;
     const onOpen  = () => finish(true);
     const onError = () => finish(false);
     const finish = (ok) => {
-      if (done) return;
-      done = true;
-      state.peer.off('open', onOpen);
-      state.peer.off('error', onError);
+      if (done) return; done = true;
+      S.peer.off('open', onOpen);
+      S.peer.off('error', onError);
       resolve(ok);
     };
-    state.peer.on('open',  onOpen);
-    state.peer.on('error', onError);
+    S.peer.on('open',  onOpen);
+    S.peer.on('error', onError);
     setTimeout(() => finish(false), timeoutMs);
   });
 }
 
 async function connectToPeer(otherId) {
   if (!otherId) { toast('Ungültiger Code'); return; }
-  if (otherId === state.myId) { toast('Das ist dein eigener Code'); return; }
+  if (otherId === S.myId) { toast('Das ist dein eigener Code'); return; }
 
-  // Clean up any leftover connections from previous attempts
-  stopHeartbeat();
-  if (state.call) { try { state.call.close(); } catch(_) {} state.call = null; }
-  if (state.conn) { try { state.conn.close(); } catch(_) {} state.conn = null; }
-  state.connected = false;
-
+  dropActiveConnection();
   setConn('connecting');
   toast('Verbinde…');
 
-  // 1) Peer-Broker muss offen sein
-  if (!state.peer) { toast('Funk nicht bereit – Gerät neu starten'); setConn('ready'); return; }
+  if (!S.peer) { toast('Funk nicht bereit – Gerät neu starten'); setConn('ready'); return; }
   if (!isPeerReady()) {
     const ok = await waitForPeerOpen();
     if (!ok) { toast('Signalserver nicht erreichbar'); setConn('ready'); return; }
   }
 
-  // 2) Mikrofon holen (kann auf iOS direkt nach Scanner zicken → kurz warten + retry)
   let stream;
   try {
     stream = await rebuildOutgoingStream();
@@ -2701,34 +2688,28 @@ async function connectToPeer(otherId) {
     catch (e2) {
       console.error('mic retry error', e2);
       toast('Mikrofon-Fehler: ' + (e2.name || e2.message || 'unbekannt'));
-      setConn('ready');
-      return;
+      setConn('ready'); return;
     }
   }
 
-  // 3) PeerJS-Call + DataChannel aufbauen
   try {
-    const dc = state.peer.connect(otherId, { reliable: true });
-    state.conn = dc; bindDataConn(dc);
-
-    const call = state.peer.call(otherId, stream);
+    const dc = S.peer.connect(otherId, { reliable: true });
+    S.conn = dc; bindDataConn(dc);
+    const call = S.peer.call(otherId, stream);
     if (!call) throw new Error('peer.call() lieferte null');
-    state.call = call;
+    S.call = call;
     bindCall(call);
+    S.partnerId = otherId;
+    store.set(STORAGE_KEYS.partner, otherId);
 
-    // remember partner for auto-reconnect on next power-on
-    state.partnerId = otherId;
-    store.set(STORE.partner, otherId);
-
-    // 4) Safety-Net: wenn in 10s kein remote-stream ankommt, sauber abbrechen
-    state._safetyTimeout = setTimeout(() => {
-      if (!state.connected) {
+    S._safetyTimeout = setTimeout(() => {
+      if (!S.connected) {
         toast('Keine Antwort – scannt das andere Gerät?');
         setConn('ready');
         try { call.close(); } catch(_) {}
         try { dc.close(); } catch(_) {}
       }
-    }, 10000);
+    }, TIMING.safetyTimeout);
   } catch (e) {
     console.error('connect error', e);
     toast('Verbindung: ' + (e.message || e.name || 'Fehler'));
@@ -2736,147 +2717,315 @@ async function connectToPeer(otherId) {
   }
 }
 
-// ============================================================
-//                    UI HELPERS
-// ============================================================
+/* §12 ─── RECONNECTION ───────────────────────────────────────── */
 
-function setConn(s) { els.body.dataset.conn = s; }
-function setTalk(s) { els.body.dataset.talk = s; }   // 'on' means talk button is usable
-function setTx(on)  { els.body.dataset.tx = on ? '1' : '0'; }
+let _isReconnecting = false;
+let _lastTeardownTime = 0;
+let _teardownCount = 0;
+
+function teardownAndReconnect() {
+  if (_isReconnecting || !S.powered || !S.partnerId) return;
+
+  const now = Date.now();
+  if (now - _lastTeardownTime < TIMING.teardownCooldown) {
+    _teardownCount++;
+  } else {
+    _teardownCount = 1;
+  }
+  _lastTeardownTime = now;
+
+  if (_teardownCount > TIMING.maxTeardowns) {
+    const backoff = Math.min(_teardownCount * 5000, 30000);
+    console.log('[Reconnect] Too many teardowns (' + _teardownCount + ') — backing off', backoff, 'ms');
+    toast('Instabil – warte ' + Math.round(backoff / 1000) + 's…');
+    dom.sigTag.textContent = 'SIG: ⏳';
+    setTimeout(async () => {
+      _teardownCount = 0;
+      _isReconnecting = false;
+      if (!S.connected && S.powered && S.partnerId) {
+        console.log('[Reconnect] Post-backoff: full peer reinit');
+        await fullPeerReinit();
+        if (S.partnerId && !S.connected) scheduleReconnect(500);
+      }
+    }, backoff);
+    return;
+  }
+
+  _isReconnecting = true;
+  console.log('[Reconnect] Teardown #' + _teardownCount + ' started');
+
+  stopTransmit();
+  clearTimeout(_reconnectTimer);
+  dropActiveConnection();
+
+  const iAmCaller = S.myId < S.partnerId;
+  const baseDelay = iAmCaller ? 3000 : 1500;
+  const delay = baseDelay + (_teardownCount * 1000);
+
+  toast(iAmCaller ? 'Verbinde neu…' : 'Warte auf Partner…');
+  dom.sigTag.textContent = 'SIG: ░░░░';
+
+  setTimeout(() => {
+    if (!S.powered) { _isReconnecting = false; return; }
+    _isReconnecting = false;
+    if (!S.powered || S.connected) return;
+    if (iAmCaller) {
+      scheduleReconnect(0);
+    } else {
+      setTimeout(() => {
+        if (!S.connected && S.powered && S.partnerId) {
+          console.log('[Reconnect] No incoming call after 15s — trying as caller');
+          scheduleReconnect(0);
+        }
+      }, TIMING.iceDisconnectTimeout);
+    }
+  }, delay);
+}
+
+let _reconnectTimer = null;
+let _reconnectAttempt = 0;
+
+function scheduleReconnect(delayMs) {
+  clearTimeout(_reconnectTimer);
+  _reconnectTimer = setTimeout(async () => {
+    if (!S.powered || S.connected) { _reconnectAttempt = 0; return; }
+    if (!S.partnerId) return;
+    _reconnectAttempt++;
+    console.log('[Reconnect] Attempt', _reconnectAttempt);
+
+    if (_reconnectAttempt >= 5 && _reconnectAttempt % 5 === 0) {
+      console.log('[Reconnect] 5+ failures — full peer reinit with fresh TURN');
+      toast('Peer-Server neu verbinden…');
+      const ok = await fullPeerReinit();
+      if (!ok) { console.warn('[Reconnect] Reinit failed'); scheduleReconnect(10000); return; }
+      if (S.partnerId && !S.connected) connectToPeer(S.partnerId);
+    } else {
+      // If TURN was refreshed, the existing peer is using stale iceServers —
+      // recreate it so new credentials flow through to RTCPeerConnection.
+      const turnRefreshed = await refreshTurnIfNeeded();
+      const peerStale = !S.peer || S.peer.disconnected || S.peer.destroyed;
+      if (turnRefreshed || peerStale) {
+        await fullPeerReinit();
+        setTimeout(() => { if (S.partnerId && !S.connected) connectToPeer(S.partnerId); }, 500);
+      } else {
+        connectToPeer(S.partnerId);
+      }
+    }
+
+    const nextDelay = Math.min(3000 * _reconnectAttempt, TIMING.reconnectMax);
+    setTimeout(() => {
+      if (!S.connected && S.powered && S.partnerId) {
+        console.log('[Reconnect] Attempt', _reconnectAttempt, 'stale — retrying');
+        scheduleReconnect(nextDelay);
+      } else {
+        _reconnectAttempt = 0;
+      }
+    }, 12000);
+  }, delayMs);
+}
+
+/* §13 ─── HEARTBEAT & DATACHANNEL ────────────────────────────── */
+
+let _heartbeatInterval = null;
+let _lastPong = 0;
+
+function startHeartbeat() {
+  stopHeartbeat();
+  _lastPong = Date.now();
+  _heartbeatInterval = setInterval(() => {
+    if (!S.conn || !S.conn.open) { stopHeartbeat(); return; }
+    try { S.conn.send({ type: 'ping' }); } catch(_) {}
+    if (Date.now() - _lastPong > TIMING.heartbeatDead && S.connected) {
+      console.log('[Heartbeat] No pong for ' + (TIMING.heartbeatDead / 1000) + 's — dead');
+      toast('Verbindung tot – verbinde neu…');
+      stopHeartbeat();
+      teardownAndReconnect();
+    }
+  }, TIMING.heartbeatInterval);
+}
+
+function stopHeartbeat() {
+  if (_heartbeatInterval) { clearInterval(_heartbeatInterval); _heartbeatInterval = null; }
+}
+
+function bindDataConn(dc) {
+  dc.on('open', () => {
+    if (S.myPos) {
+      try { const m = { type: 'pos', lat: S.myPos.lat, lng: S.myPos.lng }; if (S._posIsIPBased) m.ip = true; dc.send(m); } catch(_) {}
+    }
+    startHeartbeat();
+  });
+
+  dc.on('data', (msg) => {
+    try {
+      const obj = (typeof msg === 'string') ? JSON.parse(msg) : msg;
+      if (obj.type === 'ping') { try { dc.send({ type: 'pong' }); } catch(_) {} return; }
+      if (obj.type === 'pong') { _lastPong = Date.now(); return; }
+      if (obj.type === 'ring') {
+        playModeBeep();
+        toast('📢 RUF empfangen');
+        vibrate([60, 40, 60]);
+      } else if (obj.type === 'mode') {
+        S.mode = obj.mode;
+        applyMode(false);
+      } else if (obj.type === 'sos') {
+        playMorseSOS();
+        triggerSOSFlash();
+        toast('🆘 SOS empfangen');
+        vibrate([120, 80, 120, 80, 120]);
+      } else if (obj.type === 'pos' && typeof obj.lat === 'number') {
+        S.partnerPos = { lat: obj.lat, lng: obj.lng };
+        S._partnerPosIsIPBased = !!obj.ip;
+        updateCompass();
+      }
+    } catch(e) { console.error(e); }
+  });
+
+  dc.on('close', () => {
+    if (S.conn === dc || !S.conn) {
+      S.conn = null;
+      stopHeartbeat();
+    } else {
+      console.log('[DC] Old DataChannel closed — ignoring');
+    }
+  });
+}
+
+
+/* §14 ─── UI HELPERS ─────────────────────────────────────────── */
+
+function setConn(s) { dom.body.dataset.conn = s; }
+function setTalk(s) { dom.body.dataset.talk = s; }
+function setTx(on)  { dom.body.dataset.tx = on ? '1' : '0'; }
+
+let _modeDebounce = 0;
 
 function applyMode(broadcast = true) {
-  const m = MODES[state.mode];
-  els.body.dataset.mode = m.id;
-  els.modeIcon.textContent = m.icon;
-  els.modeName.textContent = m.name;
-  els.chBig.textContent = String(state.mode + 1).padStart(2, '0');
-  els.chSmall.textContent = 'KANAL · ' + m.name;
+  const m = MODES[S.mode];
+  dom.body.dataset.mode = m.id;
+  dom.modeIcon.textContent = m.icon;
+  dom.modeName.textContent = m.name;
+  dom.chBig.textContent = String(S.mode + 1).padStart(2, '0');
+  dom.chSmall.textContent = 'KANAL · ' + m.name;
   applyModeAudio();
   playClick(300, 0.03, 0.1);
   setTimeout(() => playStaticBurst(0.08, 0.12), 30);
-  if (navigator.vibrate) navigator.vibrate(10);
+  vibrate(10);
 
-  // Update SVG gradient stops (CSS vars don't work in SVG attributes in Firefox)
+  // Update SVG gradient stops (CSS vars don't work in SVG attrs in Firefox)
   const cs = getComputedStyle(document.body);
   const stopA = document.getElementById('partnerStopA');
   const stopB = document.getElementById('partnerStopB');
   if (stopA) stopA.setAttribute('stop-color', cs.getPropertyValue('--primary').trim() || '#00e5ff');
   if (stopB) stopB.setAttribute('stop-color', cs.getPropertyValue('--accent').trim() || '#7c4dff');
-
-  // Update partner arrow stroke
   const partnerPoly = document.querySelector('.compass-partner-svg polygon');
   const partnerLine = document.querySelector('.compass-partner-svg line');
   if (partnerPoly) partnerPoly.setAttribute('stroke', cs.getPropertyValue('--primary').trim() || '#00e5ff');
   if (partnerLine) partnerLine.setAttribute('stroke', cs.getPropertyValue('--primary').trim() || '#00e5ff');
 
-  if (broadcast && state.conn && state.conn.open) {
-    state.conn.send({ type: 'mode', mode: state.mode });
+  if (broadcast && S.conn && S.conn.open) {
+    S.conn.send({ type: 'mode', mode: S.mode });
   }
 }
 
+/** Advance the current mode by `delta` (debounced to avoid partner desync). */
 function cycleMode(delta) {
-  state.mode = (state.mode + delta + MODES.length) % MODES.length;
+  const now = Date.now();
+  if (now - _modeDebounce < TIMING.modeDebounce) return;
+  _modeDebounce = now;
+  S.mode = (S.mode + delta + MODES.length) % MODES.length;
   applyMode(true);
 }
 
 async function cycleEffect() {
-  state.effect = (state.effect + 1) % EFFECTS.length;
-  const fx = EFFECTS[state.effect];
-  if (els.fxIcon) els.fxIcon.textContent = fx.icon;
+  S.effect = (S.effect + 1) % EFFECTS.length;
+  const fx = EFFECTS[S.effect];
+  if (dom.fxIcon) dom.fxIcon.textContent = fx.icon;
   playClick(420, 0.04, 0.12);
   toast(fx.icon + ' ' + fx.name);
-  if (navigator.vibrate) navigator.vibrate(8);
+  vibrate(8);
 
-  // Rebuild outgoing stream so the new effect applies
-  if (state.connected && state.call && state.call.peerConnection) {
+  if (S.connected && S.call && S.call.peerConnection) {
     try {
       const newStream = await rebuildOutgoingStream();
-      const sender = state.call.peerConnection
+      const sender = S.call.peerConnection
         .getSenders().find(s => s.track && s.track.kind === 'audio');
       if (sender) await sender.replaceTrack(newStream.getAudioTracks()[0]);
-      // Restore transmit state
-      if (state.outMute) state.outMute.gain.value = state.transmitting ? 1 : 0;
+      if (S.outMute) S.outMute.gain.value = S.transmitting ? 1 : 0;
     } catch (e) { console.error(e); }
   }
 }
 
-// ---------- TAP-TO-TALK (toggle, kid-friendly) ----------
 function onTalkTap() {
-  if (!state.connected || !state.outMute) {
+  if (!S.connected || !S.outMute) {
     playClick(100, 0.05, 0.1);
     toast('Zuerst verbinden!');
     return;
   }
-  if (state.transmitting) stopTransmit();
+  if (S.transmitting) stopTransmit();
   else startTransmit();
 }
 
 function startTransmit() {
-  if (!state.outMute) return;
-  state.transmitting = true;
-  state.outMute.gain.setTargetAtTime(1, state.ctx.currentTime, 0.01);
-  // Fade in static hiss while transmitting
-  const m = MODES[state.mode].audio;
-  if (state.staticGain) state.staticGain.gain.setTargetAtTime(m.noise, state.ctx.currentTime, 0.05);
+  if (!S.outMute) return;
+  S.transmitting = true;
+  S.outMute.gain.setTargetAtTime(1, S.ctx.currentTime, 0.01);
+  const m = MODES[S.mode].audio;
+  if (S.staticGain) S.staticGain.gain.setTargetAtTime(m.noise, S.ctx.currentTime, 0.05);
   setTx(true);
-  els.talkIcon.textContent = '🔴';
-  if (els.talkLabel) els.talkLabel.textContent = 'STOPP';
+  dom.talkIcon.textContent = '🔴';
+  if (dom.talkLabel) dom.talkLabel.textContent = 'STOPP';
   playSquelchOpen();
-  if (navigator.vibrate) navigator.vibrate(30);
+  vibrate(30);
 }
+
 function stopTransmit() {
-  if (!state.transmitting) return;
-  state.transmitting = false;
-  if (state.outMute) state.outMute.gain.setTargetAtTime(0, state.ctx.currentTime, 0.01);
-  // Fade out static hiss
-  if (state.staticGain && state.ctx) state.staticGain.gain.setTargetAtTime(0, state.ctx.currentTime, 0.08);
+  if (!S.transmitting) return;
+  S.transmitting = false;
+  if (S.outMute) S.outMute.gain.setTargetAtTime(0, S.ctx.currentTime, 0.01);
+  if (S.staticGain && S.ctx) S.staticGain.gain.setTargetAtTime(0, S.ctx.currentTime, 0.08);
   setTx(false);
-  els.talkIcon.textContent = '🎙';
-  if (els.talkLabel) els.talkLabel.textContent = 'SPRECHEN';
+  dom.talkIcon.textContent = '🎙';
+  if (dom.talkLabel) dom.talkLabel.textContent = 'SPRECHEN';
   playSquelchClose();
 }
 
-// ---------- Call (ring) ----------
 function sendRing() {
-  if (state.conn && state.conn.open) {
-    state.conn.send({ type: 'ring' });
-  }
+  if (S.conn && S.conn.open) S.conn.send({ type: 'ring' });
   playModeBeep();
-  if (navigator.vibrate) navigator.vibrate([40, 30, 40]);
-  if (!state.connected) toast('Kein Gerät verbunden');
+  vibrate([40, 30, 40]);
+  if (!S.connected) toast('Kein Gerät verbunden');
 }
 
-// ---------- SOS ----------
 function sendSOS() {
-  if (state.conn && state.conn.open) state.conn.send({ type: 'sos' });
+  if (S.conn && S.conn.open) S.conn.send({ type: 'sos' });
   playMorseSOS();
   triggerSOSFlash();
   toast('🆘 SOS gesendet');
-  if (navigator.vibrate) navigator.vibrate([100, 60, 100, 60, 100]);
+  vibrate([100, 60, 100, 60, 100]);
 }
 
-// ---------- QR ----------
 function showMyQr() {
-  if (!state.myId) { toast('Noch nicht bereit'); return; }
-  els.peerIdText.textContent = state.myId;
+  if (!S.myId) { toast('Noch nicht bereit'); return; }
+  dom.peerIdText.textContent = S.myId;
   try {
     const qr = qrcode(0, 'M');
-    qr.addData(state.myId);
+    qr.addData(S.myId);
     qr.make();
-    els.qrHolder.innerHTML = qr.createSvgTag({ scalable: true, margin: 2 });
-    els.qrModal.classList.remove('hidden');
+    dom.qrHolder.innerHTML = qr.createSvgTag({ scalable: true, margin: 2 });
+    dom.qrModal.classList.remove('hidden');
   } catch (e) {
-    console.error(e);
-    toast('QR-Fehler: ' + e.message);
+    console.error(e); toast('QR-Fehler: ' + e.message);
   }
 }
-function closeMyQr() { els.qrModal.classList.add('hidden'); }
+
+function closeMyQr() { dom.qrModal.classList.add('hidden'); }
 
 async function openScanner() {
-  els.scanModal.classList.remove('hidden');
+  dom.scanModal.classList.remove('hidden');
   try {
-    if (!state.scanner) state.scanner = new Html5Qrcode('reader');
-    await state.scanner.start(
+    if (!S.scanner) S.scanner = new Html5Qrcode('reader');
+    await S.scanner.start(
       { facingMode: 'environment' },
       { fps: 10, qrbox: { width: 220, height: 220 } },
       (txt) => onScanSuccess(txt),
@@ -2886,24 +3035,27 @@ async function openScanner() {
     console.error(e); toast('Kamera nicht verfügbar'); closeScanner();
   }
 }
+
 async function closeScanner() {
-  if (state.scanner) { try { await state.scanner.stop(); await state.scanner.clear(); } catch(e) {} }
-  els.scanModal.classList.add('hidden');
+  if (S.scanner) {
+    // stop() and clear() must each be guarded: if stop() throws because
+    // the scanner was never started, clear() is still safe and necessary.
+    try { await S.scanner.stop(); } catch(_) {}
+    try { await S.scanner.clear(); } catch(_) {}
+  }
+  dom.scanModal.classList.add('hidden');
 }
+
 async function onScanSuccess(txt) {
   const id = String(txt || '').trim();
   await closeScanner();
-  // give iOS Safari a moment to release the camera before we grab the mic
   await new Promise(r => setTimeout(r, 250));
   toast('Code gescannt');
   connectToPeer(id);
 }
 
-// ============================================================
-//                    COMPASS (direction to partner)
-// ============================================================
+/* §15 ─── COMPASS & GEOLOCATION ──────────────────────────────── */
 
-// Haversine bearing: angle from A to B in degrees (0=N, 90=E)
 function bearingTo(lat1, lng1, lat2, lng2) {
   const toRad = Math.PI / 180;
   const dLng = (lng2 - lng1) * toRad;
@@ -2913,7 +3065,6 @@ function bearingTo(lat1, lng1, lat2, lng2) {
   return ((Math.atan2(y, x) * 180 / Math.PI) + 360) % 360;
 }
 
-// Haversine distance in metres
 function distanceTo(lat1, lng1, lat2, lng2) {
   const R = 6371000;
   const toRad = Math.PI / 180;
@@ -2929,8 +3080,6 @@ function formatDist(m) {
   return (m / 1000).toFixed(1) + ' km';
 }
 
-// IP-based geolocation fallback — rough (~1-50 km) but works indoors/with VPN off.
-// Tries multiple free APIs in case one is down.
 async function fetchIPLocation() {
   const apis = [
     { url: 'https://ipapi.co/json/', parse: (d) => ({ lat: d.latitude, lng: d.longitude }) },
@@ -2943,20 +3092,16 @@ async function fetchIPLocation() {
       if (!res.ok) continue;
       const data = await res.json();
       const pos = api.parse(data);
-      if (typeof pos.lat === 'number' && typeof pos.lng === 'number' && pos.lat !== 0) {
-        return pos;
-      }
-    } catch (_) { /* try next */ }
+      if (typeof pos.lat === 'number' && typeof pos.lng === 'number' && pos.lat !== 0) return pos;
+    } catch (_) {}
   }
   return null;
 }
 
-// Cumulative rotation tracking — avoids the 360°→0° full-spin problem
 let _dialRot = 0;
 let _partnerRot = 0;
 
 function shortestRotation(current, target) {
-  // Find the shortest path from current cumulative angle to the new target (0-360)
   const targetNorm = ((target % 360) + 360) % 360;
   const currentNorm = ((current % 360) + 360) % 360;
   let delta = targetNorm - currentNorm;
@@ -2968,95 +3113,73 @@ function shortestRotation(current, target) {
 const PROX_CLASSES = ['prox-hot', 'prox-close', 'prox-medium'];
 
 function setProximity(level) {
-  // level: 'hot' | 'close' | 'medium' | 'far' | null
-  PROX_CLASSES.forEach(c => els.compass.classList.remove(c));
-  if (level && level !== 'far') els.compass.classList.add('prox-' + level);
+  PROX_CLASSES.forEach(c => dom.compass.classList.remove(c));
+  if (level && level !== 'far') dom.compass.classList.add('prox-' + level);
 }
 
 function updateCompass() {
-  const heading = state.heading != null ? state.heading : 0;
-
-  // 1) Rotate the dial so "N" always faces geographic north
+  const heading = S.heading != null ? S.heading : 0;
   const dialTarget = -heading;
   _dialRot = shortestRotation(_dialRot, dialTarget);
-  els.compassDial.style.transform = 'rotate(' + _dialRot + 'deg)';
+  dom.compassDial.style.transform = 'rotate(' + _dialRot + 'deg)';
 
-  // 2) If partner position is known, show the partner arrow + proximity effect
-  const hasPartner = state.myPos && state.partnerPos;
+  const hasPartner = S.myPos && S.partnerPos;
   if (hasPartner) {
-    els.compass.classList.add('has-partner');
-    const bearing = bearingTo(state.myPos.lat, state.myPos.lng,
-                              state.partnerPos.lat, state.partnerPos.lng);
-    const dist = distanceTo(state.myPos.lat, state.myPos.lng,
-                            state.partnerPos.lat, state.partnerPos.lng);
+    dom.compass.classList.add('has-partner');
+    const bearing = bearingTo(S.myPos.lat, S.myPos.lng, S.partnerPos.lat, S.partnerPos.lng);
+    const dist = distanceTo(S.myPos.lat, S.myPos.lng, S.partnerPos.lat, S.partnerPos.lng);
 
-    // Partner arrow — always show direction, but fade when very close (unreliable)
     const partnerTarget = bearing - heading;
     _partnerRot = shortestRotation(_partnerRot, partnerTarget);
-    els.compassPartner.style.transform = 'rotate(' + _partnerRot + 'deg)';
-    els.compassPartner.style.opacity = dist < 50 ? '0.3' : '';
+    dom.compassPartner.style.transform = 'rotate(' + _partnerRot + 'deg)';
+    dom.compassPartner.style.opacity = dist < 50 ? '0.3' : '';
 
-    // Distance readout — mark as approximate if either position is IP-based
-    els.compassDist.classList.remove('gps-status');
-    const isApprox = state._posIsIPBased || state._partnerPosIsIPBased;
+    dom.compassDist.classList.remove('gps-status');
+    const isApprox = S._posIsIPBased || S._partnerPosIsIPBased;
     if (isApprox) {
-      els.compassDist.textContent = '~' + formatDist(dist) + ' (IP)';
-      // Don't use proximity effects with IP positions (too inaccurate)
+      dom.compassDist.textContent = '~' + formatDist(dist) + ' (IP)';
       setProximity(null);
     } else {
-      els.compassDist.textContent = formatDist(dist);
-      // Proximity level — visual "hot/cold" treasure hunt effect
+      dom.compassDist.textContent = formatDist(dist);
       if (dist < 30)       setProximity('hot');
       else if (dist < 100) setProximity('close');
       else if (dist < 500) setProximity('medium');
       else                 setProximity('far');
     }
   } else {
-    els.compass.classList.remove('has-partner');
+    dom.compass.classList.remove('has-partner');
     setProximity(null);
-    // Show helpful status: why isn't the partner arrow visible?
-    if (state.partnerPos && !state.myPos) {
-      els.compassDist.textContent = 'GPS fehlt…';
-      els.compassDist.classList.add('gps-status');
-    } else if (!state.partnerPos && state.myPos) {
-      els.compassDist.textContent = 'Partner-GPS…';
-      els.compassDist.classList.add('gps-status');
+    if (S.partnerPos && !S.myPos) {
+      dom.compassDist.textContent = 'GPS fehlt…';
+      dom.compassDist.classList.add('gps-status');
+    } else if (!S.partnerPos && S.myPos) {
+      dom.compassDist.textContent = 'Partner-GPS…';
+      dom.compassDist.classList.add('gps-status');
     } else {
-      els.compassDist.textContent = '';
-      els.compassDist.classList.remove('gps-status');
+      dom.compassDist.textContent = '';
+      dom.compassDist.classList.remove('gps-status');
     }
   }
 }
 
 function startCompass() {
-  // Clean up any existing orientation listeners from a previous startCompass() call
-  if (state._compassListeners) {
-    window.removeEventListener('deviceorientationabsolute', state._compassListeners.onAbsolute, true);
-    window.removeEventListener('deviceorientation', state._compassListeners.onEvent, true);
-    state._compassListeners = null;
-  }
-  if (state._compassSensor) {
-    try { state._compassSensor.stop(); } catch(_) {}
-    state._compassSensor = null;
-  }
+  // Always tear down any previous compass state before starting fresh —
+  // startCompass() may be called again after a network change or resume.
+  stopCompassSensors();
+
   // GPS
   if ('geolocation' in navigator) {
     let gotFix = false;
     const geoSuccess = (pos) => {
       const acc = pos.coords.accuracy ? Math.round(pos.coords.accuracy) + 'm' : '?';
       if (!gotFix) console.log('[GPS] First fix! accuracy:', acc);
-      if (state._posIsIPBased) {
-        console.log('[GPS] Real GPS replaces IP fallback');
-        toast('GPS aktiv!');
-      }
+      if (S._posIsIPBased) { console.log('[GPS] Real GPS replaces IP fallback'); toast('GPS aktiv!'); }
       gotFix = true;
-      state._posIsIPBased = false; // real GPS is always better than IP
-      state.myPos = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-      // Send position to partner
-      if (state.conn && state.conn.open) {
-        try { const _pm = { type: 'pos', lat: state.myPos.lat, lng: state.myPos.lng }; if (state._posIsIPBased) _pm.ip = true; state.conn.send(_pm); } catch(_) {}
+      S._posIsIPBased = false;
+      S.myPos = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+      if (S.conn && S.conn.open) {
+        try { const m = { type: 'pos', lat: S.myPos.lat, lng: S.myPos.lng }; S.conn.send(m); } catch(_) {}
       }
-      // GPS heading fallback: coords.heading gives direction of travel (when moving > ~3 km/h)
       if (pos.coords.heading != null && !isNaN(pos.coords.heading) && pos.coords.speed > 0.8) {
         setHeading(pos.coords.heading, 'gps');
       }
@@ -3064,11 +3187,9 @@ function startCompass() {
     };
     const geoError = (err, label) => {
       console.warn('[GPS]', label, 'error:', err.code, err.message);
-      // code 1 = PERMISSION_DENIED, 2 = POSITION_UNAVAILABLE, 3 = TIMEOUT
       if (err.code === 1) toast('Standort-Berechtigung verweigert!');
     };
 
-    // Log permission state for diagnostics
     if (navigator.permissions) {
       navigator.permissions.query({ name: 'geolocation' }).then(p => {
         console.log('[GPS] Permission state:', p.state);
@@ -3076,50 +3197,34 @@ function startCompass() {
       }).catch(() => {});
     }
 
-    // Strategy 0: Accept ANY cached position, no matter how old (Firefox sometimes
-    // has a cached position from other apps but won't fetch a new one indoors)
-    navigator.geolocation.getCurrentPosition(
-      geoSuccess,
-      () => {},
-      { enableHighAccuracy: false, maximumAge: Infinity, timeout: 5000 }
-    );
-
-    // Strategy 1: High-accuracy GPS satellite
-    state.geoWatchId = navigator.geolocation.watchPosition(
-      geoSuccess,
+    navigator.geolocation.getCurrentPosition(geoSuccess, () => {},
+      { enableHighAccuracy: false, maximumAge: Infinity, timeout: 5000 });
+    S.geoWatchId = navigator.geolocation.watchPosition(geoSuccess,
       (err) => geoError(err, 'High-accuracy'),
-      { enableHighAccuracy: true, maximumAge: 30000, timeout: 20000 }
-    );
-    // Strategy 2: Low-accuracy WiFi/cell tower — very permissive
-    state._geoWatchLow = navigator.geolocation.watchPosition(
-      geoSuccess,
+      { enableHighAccuracy: true, maximumAge: 30000, timeout: 20000 });
+    S._geoWatchLow = navigator.geolocation.watchPosition(geoSuccess,
       (err) => geoError(err, 'Low-accuracy'),
-      { enableHighAccuracy: false, maximumAge: 300000, timeout: 30000 }
-    );
+      { enableHighAccuracy: false, maximumAge: 300000, timeout: 30000 });
 
-    // Retry one-shot periodically if we still have no fix
-    state._geoRetryInterval = setInterval(() => {
+    S._geoRetryInterval = setInterval(() => {
       if (gotFix) return;
       console.log('[GPS] Retrying getCurrentPosition…');
-      navigator.geolocation.getCurrentPosition(
-        geoSuccess,
+      navigator.geolocation.getCurrentPosition(geoSuccess,
         (err) => geoError(err, 'Retry'),
-        { enableHighAccuracy: false, maximumAge: Infinity, timeout: 10000 }
-      );
+        { enableHighAccuracy: false, maximumAge: Infinity, timeout: 10000 });
     }, 12000);
 
-    // After 15s without GPS fix → IP geolocation fallback
     setTimeout(() => {
       if (!gotFix) {
         console.warn('[GPS] No fix after 15s — trying IP geolocation');
         toast('Kein GPS – nutze IP-Ortung…');
         fetchIPLocation().then(pos => {
-          if (pos && !state.myPos) {
+          if (pos && !S.myPos) {
             console.log('[GPS] IP fallback:', pos.lat.toFixed(3), pos.lng.toFixed(3));
-            state.myPos = pos;
-            state._posIsIPBased = true;
-            if (state.conn && state.conn.open) {
-              try { state.conn.send({ type: 'pos', lat: pos.lat, lng: pos.lng, ip: true }); } catch(_) {}
+            S.myPos = pos;
+            S._posIsIPBased = true;
+            if (S.conn && S.conn.open) {
+              try { S.conn.send({ type: 'pos', lat: pos.lat, lng: pos.lng, ip: true }); } catch(_) {}
             }
             updateCompass();
             toast('IP-Ortung aktiv (grob)');
@@ -3127,58 +3232,41 @@ function startCompass() {
         }).catch(() => toast('Ortung fehlgeschlagen'));
       }
     }, 15000);
-    // Periodic position ping every 5s — ensures partner gets our position even if
-    // connection was established after first GPS fix or via IP fallback
-    state._posInterval = setInterval(() => {
-      if (!state.myPos) return;
-      if (state.conn && state.conn.open) {
+
+    S._posInterval = setInterval(() => {
+      if (!S.myPos) return;
+      if (S.conn && S.conn.open) {
         try {
-          const msg = { type: 'pos', lat: state.myPos.lat, lng: state.myPos.lng };
-          if (state._posIsIPBased) msg.ip = true;
-          state.conn.send(msg);
-        } catch(e) {
-          console.warn('[GPS] Position send failed:', e.message);
-        }
+          const msg = { type: 'pos', lat: S.myPos.lat, lng: S.myPos.lng };
+          if (S._posIsIPBased) msg.ip = true;
+          S.conn.send(msg);
+        } catch(e) { console.warn('[GPS] Position send failed:', e.message); }
       }
-    }, 5000);
+    }, TIMING.posInterval);
   }
 
-  // ---- Device orientation (compass heading) ----
-  // Strategy: 3 levels, first one that works wins.
-  //   1) Generic Sensor API (AbsoluteOrientationSensor) — best on Android Chrome
-  //   2) deviceorientationabsolute event — some Android + Firefox
-  //   3) deviceorientation event — iOS (webkitCompassHeading) + last-resort Android
-  let headingSource = 'none';  // tracks which source is active
-  state._compassSensor = null; // ref for cleanup
+  // Device orientation (compass heading)
+  let headingSource = 'none';
 
   function setHeading(deg, source) {
-    // Higher-priority source wins; don't downgrade once a good source is active
     const priority = { sensor: 4, absolute: 3, gps: 2, event: 1, none: 0 };
     if (priority[source] < priority[headingSource]) return;
     headingSource = source;
-    state.heading = ((deg % 360) + 360) % 360;
-    // Show heading source + value in SIG tag for diagnostics
-    if (els.sigTag) els.sigTag.textContent = headingSource.toUpperCase() + ' ' + Math.round(state.heading) + '°';
+    S.heading = ((deg % 360) + 360) % 360;
+    if (dom.sigTag) dom.sigTag.textContent = headingSource.toUpperCase() + ' ' + Math.round(S.heading) + '°';
     updateCompass();
   }
 
-  // ---- 1) Generic Sensor API (Android Chrome 67+) ----
   function trySensorAPI() {
     if (!('AbsoluteOrientationSensor' in window)) return false;
     try {
       const sensor = new AbsoluteOrientationSensor({ frequency: 15, referenceFrame: 'device' });
       sensor.addEventListener('reading', () => {
-        // Quaternion [x, y, z, w] → compass heading
         const [qx, qy, qz, qw] = sensor.quaternion;
-        // Heading from quaternion (rotation around earth-Z in ENU frame)
         const ysqr = qy * qy;
         const t1 = 2.0 * (qw * qz + qx * qy);
         const t2 = 1.0 - 2.0 * (ysqr + qz * qz);
         let heading = Math.atan2(t1, t2) * (180 / Math.PI);
-        // atan2 gives yaw of device X-axis in ENU (0°=East, CCW positive).
-        // We need compass bearing of the Y-axis (top of phone = "forward"):
-        // Y-axis direction = yaw + 90° in math convention.
-        // Compass bearing = 90° - math_angle, so: 90 - (yaw+90) = -yaw = (360-yaw)%360
         heading = (360 - heading) % 360;
         setHeading(heading, 'sensor');
       });
@@ -3186,7 +3274,7 @@ function startCompass() {
         console.warn('[Compass] Sensor error:', e.error.name, e.error.message);
       });
       sensor.start();
-      state._compassSensor = sensor;
+      S._compassSensor = sensor;
       console.log('[Compass] Using AbsoluteOrientationSensor');
       return true;
     } catch (e) {
@@ -3195,69 +3283,50 @@ function startCompass() {
     }
   }
 
-  // ---- 2+3) DeviceOrientation events (iOS + fallback) ----
   function listenOrientationEvents() {
     const onAbsolute = (e) => {
       if (e.alpha != null) setHeading((360 - e.alpha) % 360, 'absolute');
     };
     const onEvent = (e) => {
       if (e.webkitCompassHeading != null) {
-        // iOS: webkitCompassHeading is degrees CW from north
         setHeading(e.webkitCompassHeading, 'absolute');
       } else if (e.alpha != null && (headingSource === 'none' || headingSource === 'event')) {
-        // Non-absolute alpha as last resort
         setHeading((360 - e.alpha) % 360, 'event');
       }
     };
     window.addEventListener('deviceorientationabsolute', onAbsolute, true);
     window.addEventListener('deviceorientation', onEvent, true);
-    // Store refs for cleanup in stopCompass()
-    state._compassListeners = { onAbsolute, onEvent };
+    S._compassListeners = { onAbsolute, onEvent };
   }
 
-  // ---- Kick it off ----
-
-  // On Android, try Sensor API with permissions
   if ('AbsoluteOrientationSensor' in window && navigator.permissions) {
-    // Request sensor permissions first
     Promise.all([
       navigator.permissions.query({ name: 'accelerometer' }).catch(() => ({ state: 'granted' })),
       navigator.permissions.query({ name: 'magnetometer' }).catch(() => ({ state: 'granted' })),
       navigator.permissions.query({ name: 'gyroscope' }).catch(() => ({ state: 'granted' })),
     ]).then((results) => {
-      const allGranted = results.every(r => r.state === 'granted' || r.state === 'prompt');
-      if (allGranted) {
+      if (results.every(r => r.state === 'granted' || r.state === 'prompt')) {
         if (!trySensorAPI()) listenOrientationEvents();
       } else {
         console.warn('[Compass] Sensor permissions denied');
         listenOrientationEvents();
       }
-    }).catch(() => {
-      trySensorAPI() || listenOrientationEvents();
-    });
-  }
-  // On iOS, request DeviceOrientation permission (requires user gesture)
-  else if (typeof DeviceOrientationEvent !== 'undefined' &&
-           typeof DeviceOrientationEvent.requestPermission === 'function') {
+    }).catch(() => { trySensorAPI() || listenOrientationEvents(); });
+  } else if (typeof DeviceOrientationEvent !== 'undefined' &&
+             typeof DeviceOrientationEvent.requestPermission === 'function') {
     DeviceOrientationEvent.requestPermission()
-      .then((resp) => {
-        if (resp === 'granted') listenOrientationEvents();
-        else listenOrientationEvents(); // try anyway
-      })
+      .then((resp) => { listenOrientationEvents(); })
       .catch(() => listenOrientationEvents());
-  }
-  // Fallback: just listen
-  else {
+  } else {
     trySensorAPI() || listenOrientationEvents();
   }
 
-  // Timeout: if nothing works after 4 s, warn
   setTimeout(() => {
     if (headingSource === 'none') {
-      console.warn('[Compass] No heading source after 4 s — GPS heading fallback active when moving');
+      console.warn('[Compass] No heading source after 4s');
       toast('Kompass: Sensor blockiert · Beim Laufen aktiv (GPS)');
     } else if (headingSource === 'gps') {
-      console.log('[Compass] Using GPS heading (direction of travel)');
+      console.log('[Compass] Using GPS heading');
       toast('Kompass: GPS-Modus · Beim Laufen aktiv');
     } else {
       console.log('[Compass] Active source:', headingSource);
@@ -3265,58 +3334,224 @@ function startCompass() {
   }, 4000);
 }
 
-function stopCompass() {
-  if (state.geoWatchId != null) {
-    navigator.geolocation.clearWatch(state.geoWatchId);
-    state.geoWatchId = null;
+/** Stop orientation sensors/listeners only (geolocation kept alive). */
+function stopCompassSensors() {
+  if (S._compassSensor) { try { S._compassSensor.stop(); } catch(_) {} S._compassSensor = null; }
+  if (S._compassListeners) {
+    window.removeEventListener('deviceorientationabsolute', S._compassListeners.onAbsolute, true);
+    window.removeEventListener('deviceorientation', S._compassListeners.onEvent, true);
+    S._compassListeners = null;
   }
-  if (state._geoWatchLow != null) {
-    navigator.geolocation.clearWatch(state._geoWatchLow);
-    state._geoWatchLow = null;
-  }
-  if (state._posInterval) {
-    clearInterval(state._posInterval);
-    state._posInterval = null;
-  }
-  if (state._geoRetryInterval) {
-    clearInterval(state._geoRetryInterval);
-    state._geoRetryInterval = null;
-  }
-  if (state._compassSensor) {
-    try { state._compassSensor.stop(); } catch(_) {}
-    state._compassSensor = null;
-  }
-  // Remove orientation event listeners
-  if (state._compassListeners) {
-    window.removeEventListener('deviceorientationabsolute', state._compassListeners.onAbsolute, true);
-    window.removeEventListener('deviceorientation', state._compassListeners.onEvent, true);
-    state._compassListeners = null;
-  }
-  state.myPos = null;
-  state.partnerPos = null;
-  state._posIsIPBased = false;
-  state._partnerPosIsIPBased = false;
-  state.heading = null;
-  els.compass.classList.remove('has-partner');
-  setProximity(null);
-  els.compassDial.style.transform = 'rotate(0deg)';
-  els.compassPartner.style.transform = 'rotate(0deg)';
-  els.compassDist.textContent = '';
 }
 
-// ---------- Power ----------
+function stopCompass() {
+  if (S.geoWatchId != null) { navigator.geolocation.clearWatch(S.geoWatchId); S.geoWatchId = null; }
+  if (S._geoWatchLow != null) { navigator.geolocation.clearWatch(S._geoWatchLow); S._geoWatchLow = null; }
+  if (S._posInterval) { clearInterval(S._posInterval); S._posInterval = null; }
+  if (S._geoRetryInterval) { clearInterval(S._geoRetryInterval); S._geoRetryInterval = null; }
+  stopCompassSensors();
+  S.myPos = null; S.partnerPos = null;
+  S._posIsIPBased = false; S._partnerPosIsIPBased = false;
+  S.heading = null;
+  dom.compass.classList.remove('has-partner');
+  setProximity(null);
+  dom.compassDial.style.transform = 'rotate(0deg)';
+  dom.compassPartner.style.transform = 'rotate(0deg)';
+  dom.compassDist.textContent = '';
+}
+
+/* §16 ─── KEEP-ALIVE (4 layers) ──────────────────────────────── */
+
+let _wakeLock = null;
+
+async function requestWakeLock() {
+  if (!('wakeLock' in navigator)) return;
+  try {
+    _wakeLock = await navigator.wakeLock.request('screen');
+    console.log('[WakeLock] Acquired');
+    _wakeLock.addEventListener('release', () => console.log('[WakeLock] Released'));
+  } catch (e) { console.warn('[WakeLock] Failed:', e.message); }
+}
+
+function releaseWakeLock() {
+  if (_wakeLock) { try { _wakeLock.release(); } catch(_) {} _wakeLock = null; }
+}
+
+let _webLockController = null;
+
+function acquireWebLock() {
+  if (!navigator.locks || _webLockController) return;
+  _webLockController = new AbortController();
+  navigator.locks.request('kidcomm-keepalive', { signal: _webLockController.signal }, () => {
+    console.log('[WebLock] Acquired');
+    return new Promise(() => {});
+  }).catch(() => {});
+}
+
+function releaseWebLock() {
+  if (_webLockController) { _webLockController.abort(); _webLockController = null; console.log('[WebLock] Released'); }
+}
+
+let _keepAliveOsc = null;
+let _keepAliveGain = null;
+
+function startAudioKeepAlive() {
+  if (_keepAliveOsc || !S.ctx) return;
+  try {
+    _keepAliveGain = S.ctx.createGain();
+    _keepAliveGain.gain.value = 0.001;
+    _keepAliveGain.connect(S.ctx.destination);
+    _keepAliveOsc = S.ctx.createOscillator();
+    _keepAliveOsc.frequency.value = 1;
+    _keepAliveOsc.connect(_keepAliveGain);
+    _keepAliveOsc.start();
+    console.log('[KeepAlive] Silent oscillator started');
+  } catch (e) { console.warn('[KeepAlive] Failed:', e.message); }
+}
+
+function stopAudioKeepAlive() {
+  if (_keepAliveOsc) { try { _keepAliveOsc.stop(); _keepAliveOsc.disconnect(); } catch(_) {} _keepAliveOsc = null; }
+  if (_keepAliveGain) { try { _keepAliveGain.disconnect(); } catch(_) {} _keepAliveGain = null; }
+}
+
+function acquireAllKeepAlives() { requestWakeLock(); acquireWebLock(); startAudioKeepAlive(); }
+function releaseAllKeepAlives() { releaseWakeLock(); releaseWebLock(); stopAudioKeepAlive(); }
+
+
+/* §17 ─── VISIBILITY & NETWORK ───────────────────────────────── */
+
+let _wentHiddenAt = 0;
+
+/**
+ * Close and drop the active call/DataChannel, reset connection flags,
+ * and return the UI to the "ready" state. Safe to call multiple times.
+ */
+function dropActiveConnection() {
+  stopHeartbeat();
+  if (S.call) { try { S.call.close(); } catch(_) {} S.call = null; }
+  if (S.conn) { try { S.conn.close(); } catch(_) {} S.conn = null; }
+  S.connected = false;
+  setConn('ready');
+  setTalk('off');
+}
+
+/**
+ * Resume logic when the page becomes visible again after being hidden.
+ * Precedence:
+ *   1. Still connected  → verify ICE health, teardown-and-reconnect if bad.
+ *   2. Partner saved    → drop any stale socket, reinit peer.
+ *                         On success, the 'open' handler auto-connects to
+ *                         S.partnerId via autoConnectTried reset. If the
+ *                         peer never opens, scheduleReconnect takes over.
+ *   3. No partner       → nothing to do.
+ */
+async function resumeFromBackground(hiddenMs) {
+  if (S.ctx && S.ctx.state === 'suspended') {
+    S.ctx.resume().then(() => console.log('[Audio] Context resumed'));
+  }
+  if (S.connected || S.partnerId) acquireAllKeepAlives();
+
+  // 1) Still connected — check ICE health
+  if (S.connected && S.call && S.call.peerConnection) {
+    const pc = S.call.peerConnection;
+    const iceState = pc.iceConnectionState;
+    console.log('[Visibility] ICE state after resume:', iceState);
+    if (iceState === 'failed' || iceState === 'closed') {
+      toast('Verbindung verloren – verbinde neu…');
+      teardownAndReconnect();
+    } else if (iceState === 'disconnected') {
+      toast('Verbindung prüfen…');
+      setTimeout(() => {
+        const cur = S.call && S.call.peerConnection;
+        if (cur && cur !== pc) return; // replaced in the meantime
+        if (cur && cur.iceConnectionState !== 'connected' && cur.iceConnectionState !== 'completed') {
+          teardownAndReconnect();
+        }
+      }, 3000);
+    }
+    return;
+  }
+
+  // 3) No partner — nothing to do
+  if (!S.partnerId) return;
+
+  // 2) Partner saved but not connected — reinit and let auto-connect fire
+  console.log('[Visibility] Resume with partner saved, hidden', Math.round(hiddenMs / 1000), 's');
+  toast('Verbinde neu…');
+  dropActiveConnection();
+
+  // Short hiccup with a live peer → just reconnect, no reinit needed
+  if (hiddenMs < TIMING.shortHiccup && S.peer && !S.peer.disconnected && !S.peer.destroyed) {
+    await refreshTurnIfNeeded();
+    scheduleReconnect(500);
+    return;
+  }
+
+  const opened = await fullPeerReinit();
+  if (!opened) {
+    console.warn('[Visibility] Peer did not open — fallback scheduleReconnect');
+    scheduleReconnect(2000);
+  }
+  // else: 'open' handler auto-connects to S.partnerId
+}
+
+document.addEventListener('visibilitychange', () => {
+  if (!S.powered) return;
+  if (document.hidden) {
+    _wentHiddenAt = Date.now();
+    console.log('[Visibility] Hidden');
+    acquireWebLock();
+    startAudioKeepAlive();
+  } else {
+    const hiddenMs = Date.now() - _wentHiddenAt;
+    console.log('[Visibility] Visible again after', Math.round(hiddenMs / 1000), 's');
+    resumeFromBackground(hiddenMs);
+  }
+});
+
+document.addEventListener('freeze', () => { console.log('[Lifecycle] Page frozen'); });
+document.addEventListener('resume', () => {
+  console.log('[Lifecycle] Page resumed from freeze');
+  if (S.powered && !document.hidden) {
+    if (S.ctx && S.ctx.state === 'suspended') S.ctx.resume();
+    if (!S.connected && S.partnerId) scheduleReconnect(500);
+  }
+});
+
+function onNetworkChange() {
+  if (!S.powered) return;
+  console.log('[NET] Network change detected');
+  if (S.connected && S.call && S.call.peerConnection) {
+    const pc = S.call.peerConnection;
+    setTimeout(() => {
+      if (pc.iceConnectionState === 'disconnected' || pc.iceConnectionState === 'failed') {
+        console.log('[NET] ICE unhealthy after network change');
+        teardownAndReconnect();
+      }
+    }, 5000);
+  }
+  if (S.peer && S.peer.disconnected) { try { S.peer.reconnect(); } catch(_) {} }
+}
+
+function onNetworkBack() {
+  if (!S.powered) return;
+  console.log('[NET] Back online');
+  toast('Netzwerk zurück…');
+  if (!S.connected && S.partnerId) scheduleReconnect(2000);
+  if (S.peer && S.peer.disconnected) { try { S.peer.reconnect(); } catch(_) {} }
+}
+
+/* §18 ─── POWER ON / OFF ─────────────────────────────────────── */
+
 async function powerOn() {
-  els.body.dataset.state = 'on';
+  if (S.powered) return; // idempotent
+  dom.body.dataset.state = 'on';
   try { await initAudio(); } catch(e) { console.error(e); toast('Audio-Fehler'); return; }
 
-  // IMPORTANT: Request geolocation FIRST, before microphone.
-  // Firefox suppresses the second permission prompt if two come in quick succession.
-  // Geolocation is requested via a one-shot getCurrentPosition which triggers the
-  // permission dialog. We await it (with timeout) so the dialog is fully resolved
-  // before we request the microphone.
+  // Request geolocation FIRST (Firefox suppresses second prompt)
   try {
     await new Promise((resolve) => {
-      const timer = setTimeout(resolve, 4000); // don't block forever
+      const timer = setTimeout(resolve, 4000);
       navigator.geolocation.getCurrentPosition(
         () => { clearTimeout(timer); resolve(); },
         () => { clearTimeout(timer); resolve(); },
@@ -3328,366 +3563,115 @@ async function powerOn() {
 
   try {
     const s = await navigator.mediaDevices.getUserMedia({ audio: true });
-    s.getTracks().forEach(t => t.stop()); // only for permission prompt
+    s.getTracks().forEach(t => t.stop());
   } catch(e) { toast('Mikrofon nötig!'); }
 
   playStartupSequence();
-  state.powered = true;
+  S.powered = true;
   applyMode(false);
   setupViz();
-  state._clockInterval = setInterval(updateClock, 1000);
+  S._clockInterval = setInterval(updateClock, 1000);
   updateClock();
-
-  // Start compass — geolocation permission was already granted above,
-  // so startCompass() won't trigger a second prompt.
   startCompass();
 
-  // Fetch TURN credentials FIRST, then init peer.
-  // This ensures TURN is available for the very first call (critical for WiFi↔Mobilfunk).
   toast('TURN-Server laden…');
   fetchTurnServers().then((turnServers) => {
-    if (!state.powered) return;
+    if (!S.powered) return;
     ICE_SERVERS = [...BASE_ICE, ...turnServers];
     _turnFetchedAt = Date.now();
-    console.log('[ICE] Total servers:', ICE_SERVERS.length,
-      '(STUN:', BASE_ICE.length, '+ TURN:', turnServers.length, ')');
-    if (turnServers.length === 0 && METERED_APP && METERED_KEY) {
+    console.log('[ICE] Total servers:', ICE_SERVERS.length);
+    if (turnServers.length === 0 && TURN_CONFIG.app && TURN_CONFIG.key) {
       toast('TURN-Server nicht erreichbar');
     } else if (turnServers.length > 0) {
       toast('TURN bereit · Mobilfunk OK');
     }
-    // NOW init peer — TURN is guaranteed ready before any call happens
     initPeer();
   }).catch(() => {
-    if (!state.powered) return;
-    // Even if TURN fails, still init peer with STUN-only
-    _turnFetchedAt = Date.now(); // prevent immediate re-fetch loop
+    if (!S.powered) return;
+    _turnFetchedAt = Date.now();
     toast('TURN-Fehler – nur WLAN');
     initPeer();
   });
 
-  // Network recovery — auto-reconnect when WiFi comes back (e.g. devolo switch)
   window.addEventListener('online', onNetworkBack);
-  // NetworkInformation API — detects WiFi access point changes WITHOUT going offline
-  // Critical for devolo powerline setups where the device seamlessly switches APs
-  if (navigator.connection) {
-    navigator.connection.addEventListener('change', onNetworkChange);
-  }
-}
-
-// ============================================================
-//   BACKGROUND / LOCKSCREEN / APP-SWITCH SURVIVAL
-// ============================================================
-//
-// Mobile browsers aggressively suspend background pages. We use
-// multiple layers to keep the connection alive:
-//   1) WakeLock API — prevents screen from turning off
-//   2) Web Locks API — tells browser we have critical work (Chrome)
-//   3) Silent audio keep-alive — prevents AudioContext suspension
-//   4) Fast reconnect on resume — if all else fails
-
-// ---- Layer 1: Wake Lock (screen) ----
-let _wakeLock = null;
-async function requestWakeLock() {
-  if (!('wakeLock' in navigator)) return;
-  try {
-    _wakeLock = await navigator.wakeLock.request('screen');
-    console.log('[WakeLock] Acquired');
-    _wakeLock.addEventListener('release', () => {
-      console.log('[WakeLock] Released');
-    });
-  } catch (e) {
-    console.warn('[WakeLock] Failed:', e.message);
-  }
-}
-function releaseWakeLock() {
-  if (_wakeLock) {
-    try { _wakeLock.release(); } catch(_) {}
-    _wakeLock = null;
-  }
-}
-
-// ---- Layer 2: Web Locks API (background keep-alive) ----
-// Requesting a lock that never resolves tells Chrome the page has
-// important work → delays suspension significantly (tested on Android Chrome).
-let _webLockController = null;
-function acquireWebLock() {
-  if (!navigator.locks) return;
-  if (_webLockController) return; // already held
-  _webLockController = new AbortController();
-  navigator.locks.request('kidcomm-keepalive', { signal: _webLockController.signal }, () => {
-    console.log('[WebLock] Acquired — background keep-alive active');
-    // Return a promise that never resolves → lock is held indefinitely
-    return new Promise(() => {});
-  }).catch(() => {}); // AbortError when we release
-  console.log('[WebLock] Requested');
-}
-function releaseWebLock() {
-  if (_webLockController) {
-    _webLockController.abort();
-    _webLockController = null;
-    console.log('[WebLock] Released');
-  }
-}
-
-// ---- Layer 3: Silent audio keep-alive ----
-// A barely-audible oscillator prevents the AudioContext from being suspended
-// when the page goes to background. This keeps WebRTC audio flowing.
-let _keepAliveOsc = null;
-let _keepAliveGain = null;
-function startAudioKeepAlive() {
-  if (_keepAliveOsc || !state.ctx) return;
-  try {
-    _keepAliveGain = state.ctx.createGain();
-    _keepAliveGain.gain.value = 0.001; // practically silent
-    _keepAliveGain.connect(state.ctx.destination);
-    _keepAliveOsc = state.ctx.createOscillator();
-    _keepAliveOsc.frequency.value = 1; // 1 Hz — inaudible
-    _keepAliveOsc.connect(_keepAliveGain);
-    _keepAliveOsc.start();
-    console.log('[KeepAlive] Silent audio oscillator started');
-  } catch (e) {
-    console.warn('[KeepAlive] Audio keep-alive failed:', e.message);
-  }
-}
-function stopAudioKeepAlive() {
-  if (_keepAliveOsc) {
-    try { _keepAliveOsc.stop(); _keepAliveOsc.disconnect(); } catch(_) {}
-    _keepAliveOsc = null;
-  }
-  if (_keepAliveGain) {
-    try { _keepAliveGain.disconnect(); } catch(_) {}
-    _keepAliveGain = null;
-  }
-}
-
-// ---- Combined acquire/release for all keep-alive layers ----
-function acquireAllKeepAlives() {
-  requestWakeLock();
-  acquireWebLock();
-  startAudioKeepAlive();
-}
-function releaseAllKeepAlives() {
-  releaseWakeLock();
-  releaseWebLock();
-  stopAudioKeepAlive();
-}
-
-// ---- Layer 4: Visibility change handler (fast reconnect on resume) ----
-let _wentHiddenAt = 0;
-document.addEventListener('visibilitychange', () => {
-  if (!state.powered) return;
-
-  if (document.hidden) {
-    // Going to background / lockscreen
-    _wentHiddenAt = Date.now();
-    console.log('[Visibility] Hidden (lockscreen/background)');
-    // Ensure keep-alive mechanisms are active
-    acquireWebLock();
-    startAudioKeepAlive();
-  } else {
-    // Coming back to foreground
-    const hiddenMs = Date.now() - _wentHiddenAt;
-    console.log('[Visibility] Visible again after', Math.round(hiddenMs / 1000), 's');
-
-    // 1) Resume AudioContext (browsers may suspend it despite keep-alive)
-    if (state.ctx && state.ctx.state === 'suspended') {
-      state.ctx.resume().then(() => console.log('[Audio] Context resumed'));
-    }
-
-    // 2) Re-acquire wake lock (auto-released on visibility change)
-    if (state.connected || state.partnerId) acquireAllKeepAlives();
-
-    // 3) Check if connection survived
-    // After long sleep (>30s), assume connection is dead regardless of state
-    // (close events don't fire in background, so state.connected may be stale)
-    if (hiddenMs > 30000 && state.partnerId) {
-      console.log('[Visibility] Was hidden', Math.round(hiddenMs/1000), 's — assume dead, full reinit');
-      toast('Verbinde neu nach Ruhemodus…');
-      // Reset connection state (close events may not have fired)
-      stopHeartbeat();
-      if (state.call) { try { state.call.close(); } catch(_) {} }
-      if (state.conn) { try { state.conn.close(); } catch(_) {} }
-      state.call = null; state.conn = null; state.connected = false;
-      setConn('ready'); setTalk('off');
-      fullPeerReinit().then(() => {
-        if (state.partnerId && !state.connected) scheduleReconnect(300);
-      });
-    } else if (state.connected && state.call && state.call.peerConnection) {
-      const pc = state.call.peerConnection;
-      const iceState = pc.iceConnectionState;
-      console.log('[Visibility] ICE state after resume:', iceState);
-
-      if (iceState === 'failed' || iceState === 'closed') {
-        console.log('[Visibility] Connection dead after sleep — reconnecting');
-        toast('Verbindung verloren – verbinde neu…');
-        teardownAndReconnect();
-      } else if (iceState === 'disconnected') {
-        toast('Verbindung prüfen…');
-        setTimeout(() => {
-          if (state.call && state.call.peerConnection &&
-              state.call.peerConnection.iceConnectionState !== 'connected' &&
-              state.call.peerConnection.iceConnectionState !== 'completed') {
-            console.log('[Visibility] Still disconnected after resume — reconnecting');
-            teardownAndReconnect();
-          }
-        }, 3000);
-      }
-    } else if (!state.connected && state.partnerId) {
-      console.log('[Visibility] Not connected after resume — reconnecting');
-      toast('Verbinde neu…');
-
-      // After any sleep >5s, full peer reinit — broker is likely stale
-      if (hiddenMs > 5000) {
-        console.log('[Visibility] Was hidden', Math.round(hiddenMs/1000), 's — full reinit');
-        fullPeerReinit().then(() => {
-          if (state.partnerId && !state.connected) scheduleReconnect(300);
-        });
-      } else if (state.peer && (state.peer.disconnected || state.peer.destroyed)) {
-        initPeer();
-        setTimeout(() => scheduleReconnect(500), 1500);
-      } else {
-        refreshTurnIfNeeded();
-        scheduleReconnect(500);
-      }
-    }
-  }
-});
-
-// Page freeze/resume (Android Chrome aggressive throttling)
-document.addEventListener('freeze', () => {
-  console.log('[Lifecycle] Page frozen');
-});
-document.addEventListener('resume', () => {
-  console.log('[Lifecycle] Page resumed from freeze');
-  if (state.powered && !document.hidden) {
-    if (state.ctx && state.ctx.state === 'suspended') state.ctx.resume();
-    if (!state.connected && state.partnerId) scheduleReconnect(500);
-  }
-});
-
-function onNetworkChange() {
-  if (!state.powered) return;
-  console.log('[NET] Network change detected (type:', navigator.connection?.type,
-    'downlink:', navigator.connection?.downlink, ')');
-  // If connected, check if ICE is still healthy after network change. If not, full reconnect.
-  if (state.connected && state.call && state.call.peerConnection) {
-    const pc = state.call.peerConnection;
-    setTimeout(() => {
-      if (pc.iceConnectionState === 'disconnected' || pc.iceConnectionState === 'failed') {
-        console.log('[NET] ICE unhealthy after network change — full reconnect');
-        teardownAndReconnect();
-      }
-    }, 5000);
-  }
-  // If broker is dead, reconnect it
-  if (state.peer && state.peer.disconnected) {
-    try { state.peer.reconnect(); } catch(_) {}
-  }
-}
-
-function onNetworkBack() {
-  if (!state.powered) return;
-  console.log('[NET] Back online');
-  toast('Netzwerk zurück…');
-  // Give the network a moment to stabilize after WiFi switch
-  if (!state.connected && state.partnerId) {
-    scheduleReconnect(2000);
-  }
-  // Also make sure the PeerJS broker connection is alive
-  if (state.peer && state.peer.disconnected) {
-    try { state.peer.reconnect(); } catch(_) {}
-  }
+  if (navigator.connection) navigator.connection.addEventListener('change', onNetworkChange);
 }
 
 function powerOff() {
-  if (!state.powered) return;
+  if (!S.powered) return;
   window.removeEventListener('online', onNetworkBack);
   if (navigator.connection) navigator.connection.removeEventListener('change', onNetworkChange);
   releaseAllKeepAlives();
   stopHeartbeat();
   clearTimeout(_reconnectTimer); _reconnectTimer = null;
-  clearTimeout(state._stabilityTimer); state._stabilityTimer = null;
-  clearTimeout(state._safetyTimeout); state._safetyTimeout = null;
+  clearTimeout(S._stabilityTimer); S._stabilityTimer = null;
+  clearTimeout(S._safetyTimeout); S._safetyTimeout = null;
   _reconnectAttempt = 0; _teardownCount = 0; _isReconnecting = false;
-  _turnFetchedAt = 0; // force fresh TURN on next power-on
-  // Stop clock + visualizer
-  if (state._clockInterval) { clearInterval(state._clockInterval); state._clockInterval = null; }
-  if (state._vizRafId) { cancelAnimationFrame(state._vizRafId); state._vizRafId = null; }
-  if (state._vizResizeHandler) { window.removeEventListener('resize', state._vizResizeHandler); state._vizResizeHandler = null; }
-  // Reset compass rotation tracking
+  _turnFetchedAt = 0;
+  if (S._clockInterval) { clearInterval(S._clockInterval); S._clockInterval = null; }
+  if (S._vizRafId) { cancelAnimationFrame(S._vizRafId); S._vizRafId = null; }
+  if (S._vizResizeHandler) { window.removeEventListener('resize', S._vizResizeHandler); S._vizResizeHandler = null; }
   _dialRot = 0; _partnerRot = 0;
   playShutdownSequence();
   stopTransmit();
-  try { if (state.call) state.call.close(); } catch(e) {}
-  try { if (state.conn) state.conn.close(); } catch(e) {}
-  try { if (state.peer) state.peer.destroy(); } catch(e) {}
-  try { if (state.rawStream) state.rawStream.getTracks().forEach(t => t.stop()); } catch(e) {}
-  try { if (state.remoteAudioEl) { state.remoteAudioEl.srcObject = null; state.remoteAudioEl.remove(); } } catch(e) {}
+  try { if (S.call) S.call.close(); } catch(_) {}
+  try { if (S.conn) S.conn.close(); } catch(_) {}
+  try { if (S.peer) S.peer.destroy(); } catch(_) {}
+  try { if (S.rawStream) S.rawStream.getTracks().forEach(t => t.stop()); } catch(_) {}
+  try { if (S.remoteAudioEl) { S.remoteAudioEl.srcObject = null; S.remoteAudioEl.remove(); } } catch(_) {}
   disposeEffectChain();
-  state.peer = null; state.call = null; state.conn = null;
-  state.rawStream = null; state.remoteStream = null; state.remoteAudioEl = null;
-  state.connected = false; state.powered = false;
-  state.autoConnectTried = false; // reset for next power-on
+  S.peer = null; S.call = null; S.conn = null;
+  S.rawStream = null; S.outStream = null; S.remoteStream = null; S.remoteAudioEl = null;
+  S.connected = false; S.powered = false;
+  S.autoConnectTried = false;
   setConn('off'); setTalk('off'); setTx(false);
   stopCompass();
   setTimeout(() => {
-    // Fully tear down the audio graph so the background noise stops
-    try { if (state.staticGain) state.staticGain.disconnect(); } catch(e) {}
-    try { if (state.ctx) state.ctx.close(); } catch(e) {}
-    state.ctx = null;
-    state.staticGain = null;
-    state.rxFilter = null;
-    state.rxHighpass = null;
-    state.rxDistortion = null;
-    state.rxAnalyser = null;
-    state.outMute = null;
-    state.outDest = null;
-    els.body.dataset.state = 'off';
+    try { if (S.staticGain) S.staticGain.disconnect(); } catch(_) {}
+    try { if (S.ctx) S.ctx.close(); } catch(_) {}
+    S.ctx = null;
+    S.staticGain = null;
+    S.rxFilter = null;
+    S.rxDistortion = null;
+    S.rxAnalyser = null;
+    S.txAnalyser = null;
+    S.outMute = null;
+    dom.body.dataset.state = 'off';
   }, 700);
 }
 
-// ============================================================
-//                        WIRE-UP
-// ============================================================
+/* §19 ─── EVENT WIRING & INIT ────────────────────────────────── */
 
-// Power button is a toggle — no start screen
-els.powerBtn.addEventListener('click', () => {
-  if (state.powered) powerOff();
-  else powerOn();
-});
-els.talkBtn.addEventListener('click', onTalkTap);
-// Also support spacebar (dev/testing)
+dom.powerBtn.addEventListener('click', () => { if (S.powered) powerOff(); else powerOn(); });
+dom.talkBtn.addEventListener('click', onTalkTap);
 window.addEventListener('keydown', (e) => {
   if (e.code === 'Space' && !e.repeat) { e.preventDefault(); onTalkTap(); }
 });
 
-els.modePrevBtn.addEventListener('click', () => cycleMode(-1));
-els.modeNextBtn.addEventListener('click', () => cycleMode(+1));
-els.callBtn.addEventListener('click', sendRing);
-els.qrBtn.addEventListener('click', showMyQr);
-els.scanBtn.addEventListener('click', openScanner);
-els.fxBtn.addEventListener('click', cycleEffect);
-els.sosBtn.addEventListener('click', sendSOS);
-els.closeQrBtn.addEventListener('click', closeMyQr);
-els.closeScanBtn.addEventListener('click', closeScanner);
+dom.modePrevBtn.addEventListener('click', () => cycleMode(-1));
+dom.modeNextBtn.addEventListener('click', () => cycleMode(+1));
+dom.callBtn.addEventListener('click', sendRing);
+dom.qrBtn.addEventListener('click', showMyQr);
+dom.scanBtn.addEventListener('click', openScanner);
+dom.fxBtn.addEventListener('click', cycleEffect);
+dom.sosBtn.addEventListener('click', sendSOS);
+dom.closeQrBtn.addEventListener('click', closeMyQr);
+dom.closeScanBtn.addEventListener('click', closeScanner);
 
 document.addEventListener('dblclick', (e) => e.preventDefault());
 document.addEventListener('gesturestart', (e) => e.preventDefault());
 
-// Lock orientation if possible
 if (screen.orientation && screen.orientation.lock) {
   screen.orientation.lock('portrait').catch(() => {});
 }
 
-// Build background decorations
 buildEmbers();
 buildTwinkles();
 
-// Register service worker
 if ('serviceWorker' in navigator && location.protocol === 'https:') {
   navigator.serviceWorker.register('sw.js').catch(() => {});
 }
+
 </script>
 
 <div class="sos-flash" id="sosFlash" role="alert" aria-live="assertive" aria-label="SOS Signal"></div>
