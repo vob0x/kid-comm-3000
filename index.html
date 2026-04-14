@@ -1132,11 +1132,13 @@ body[data-talk="off"] .talk-btn {
   align-items: center;
   justify-content: center;
 }
-#qrHolder > canvas,
-#qrHolder > svg,
-#qrHolder > img {
-  max-width: 240px;
-  max-height: 240px;
+/* Force explicit dimensions: qrcode-generator's scalable:true SVG has
+ * no intrinsic size, and max-width alone leaves it at 0×0. */
+#qrHolder svg,
+#qrHolder img,
+#qrHolder canvas {
+  width: 240px;
+  height: 240px;
   display: block;
 }
 .qr-wait {
@@ -1975,10 +1977,10 @@ const BEEPS = {
  * shared AudioContext timeline.
  */
 const SBB_CHIME_NOTES = Object.freeze([
-  { f: 311.13, t: 0.00, d: 0.55 },  // S → Es (Eb4)
-  { f: 466.16, t: 0.40, d: 0.55 },  // B → B  (Bb4)
-  { f: 466.16, t: 0.80, d: 1.00 },  // B → B  (Bb4, sustained)
-  { f: 369.99, t: 0.80, d: 1.00 },  // + Ges (Gb4, doublestrike chord)
+  { f: 622.25, t: 0.00, d: 0.55 },  // S → Es (Eb5)
+  { f: 932.33, t: 0.40, d: 0.55 },  // B → B  (Bb5)
+  { f: 932.33, t: 0.80, d: 1.00 },  // B → B  (Bb5, sustained)
+  { f: 739.99, t: 0.80, d: 1.00 },  // + Ges (Gb5, doublestrike chord)
 ]);
 
 /**
@@ -3121,14 +3123,9 @@ function showMyQr() {
 }
 
 /**
- * Render the QR code directly to a <canvas>. Draws each module as a filled
- * rectangle using getModuleCount() / isDark(row, col) from the qrcode
- * library. Using canvas eliminates every previous failure mode:
- *   • No SVG width-collapse in flex containers
- *   • No data-URL decoding edge cases in innerHTML
- *   • No CSS sizing race for replaced elements
- *   • No blocked external images
- * Canvas is supported universally and draws synchronously.
+ * Render the QR code as a scalable SVG — the same approach V1 used and
+ * that is proven to work. The CSS rule on #qrHolder svg supplies the
+ * explicit width/height that a scalable SVG lacks intrinsically.
  */
 function renderMyQr(id) {
   dom.peerIdText.textContent = id;
@@ -3137,46 +3134,16 @@ function renderMyQr(id) {
     dom.qrHolder.innerHTML = '<div class="qr-wait">QR-Bibliothek nicht geladen.<br>Seite neu laden.</div>';
     return;
   }
-  let qr;
   try {
-    qr = qrcode(0, 'M');         // auto-size, medium error correction
+    const qr = qrcode(0, 'M');         // auto-size, medium error correction
     qr.addData(String(id));
     qr.make();
+    dom.qrHolder.innerHTML = qr.createSvgTag({ scalable: true, margin: 2 });
+    console.log('[Peer] QR rendered for', id, '—', qr.getModuleCount() + 'x' + qr.getModuleCount(), 'modules');
   } catch (e) {
-    console.error('[Peer] QR build failed:', e.message);
+    console.error('[Peer] QR render failed:', e.message);
     dom.qrHolder.innerHTML = '<div class="qr-wait">QR-Fehler: ' + (e.message || e) + '</div>';
-    return;
   }
-  const modules  = qr.getModuleCount();
-  const quiet    = 4;                          // cells of quiet zone on each side
-  const target   = 240;                        // matches #qrHolder inner slot
-  const cellSize = Math.max(2, Math.floor(target / (modules + quiet * 2)));
-  const size     = (modules + quiet * 2) * cellSize;
-
-  const canvas = document.createElement('canvas');
-  canvas.width        = size;
-  canvas.height       = size;
-  canvas.style.width  = size + 'px';
-  canvas.style.height = size + 'px';
-  canvas.style.display = 'block';
-  canvas.setAttribute('role', 'img');
-  canvas.setAttribute('aria-label', 'QR-Code für Peer ' + id);
-
-  const g = canvas.getContext('2d');
-  g.fillStyle = '#ffffff';
-  g.fillRect(0, 0, size, size);
-  g.fillStyle = '#000000';
-  for (let row = 0; row < modules; row++) {
-    for (let col = 0; col < modules; col++) {
-      if (qr.isDark(row, col)) {
-        g.fillRect((col + quiet) * cellSize, (row + quiet) * cellSize, cellSize, cellSize);
-      }
-    }
-  }
-
-  dom.qrHolder.textContent = '';   // wipe any prior spinner / error
-  dom.qrHolder.appendChild(canvas);
-  console.log('[Peer] QR rendered —', modules + 'x' + modules, 'modules,', size + 'px canvas for', id);
 }
 
 function closeMyQr() { dom.qrModal.classList.add('hidden'); }
