@@ -1132,9 +1132,11 @@ body[data-talk="off"] .talk-btn {
   align-items: center;
   justify-content: center;
 }
-#qrHolder svg, #qrHolder img {
-  width: 240px;
-  height: 240px;
+#qrHolder > canvas,
+#qrHolder > svg,
+#qrHolder > img {
+  max-width: 240px;
+  max-height: 240px;
   display: block;
 }
 .qr-wait {
@@ -3123,26 +3125,63 @@ function showMyQr() {
   });
 }
 
+/**
+ * Render the QR code directly to a <canvas>. Draws each module as a filled
+ * rectangle using getModuleCount() / isDark(row, col) from the qrcode
+ * library. Using canvas eliminates every previous failure mode:
+ *   • No SVG width-collapse in flex containers
+ *   • No data-URL decoding edge cases in innerHTML
+ *   • No CSS sizing race for replaced elements
+ *   • No blocked external images
+ * Canvas is supported universally and draws synchronously.
+ */
 function renderMyQr(id) {
   dom.peerIdText.textContent = id;
   if (typeof qrcode !== 'function') {
+    console.error('[Peer] qrcode library not loaded — cannot render QR');
     dom.qrHolder.innerHTML = '<div class="qr-wait">QR-Bibliothek nicht geladen.<br>Seite neu laden.</div>';
     return;
   }
+  let qr;
   try {
-    const qr = qrcode(0, 'M');
-    qr.addData(id);
+    qr = qrcode(0, 'M');         // auto-size, medium error correction
+    qr.addData(String(id));
     qr.make();
-    // createImgTag returns a data-URL PNG <img> with explicit pixel
-    // dimensions baked in — renders identically in every browser, no
-    // dependence on CSS sizing inside flex containers. Cell size 6px
-    // × (typical 29 cells + 4 margin) ≈ 222 px which matches the 240 px
-    // #qrHolder svg/img rule with room to breathe.
-    dom.qrHolder.innerHTML = qr.createImgTag(6, 4);
   } catch (e) {
-    console.error(e);
+    console.error('[Peer] QR build failed:', e.message);
     dom.qrHolder.innerHTML = '<div class="qr-wait">QR-Fehler: ' + (e.message || e) + '</div>';
+    return;
   }
+  const modules  = qr.getModuleCount();
+  const quiet    = 4;                          // cells of quiet zone on each side
+  const target   = 240;                        // matches #qrHolder inner slot
+  const cellSize = Math.max(2, Math.floor(target / (modules + quiet * 2)));
+  const size     = (modules + quiet * 2) * cellSize;
+
+  const canvas = document.createElement('canvas');
+  canvas.width        = size;
+  canvas.height       = size;
+  canvas.style.width  = size + 'px';
+  canvas.style.height = size + 'px';
+  canvas.style.display = 'block';
+  canvas.setAttribute('role', 'img');
+  canvas.setAttribute('aria-label', 'QR-Code für Peer ' + id);
+
+  const g = canvas.getContext('2d');
+  g.fillStyle = '#ffffff';
+  g.fillRect(0, 0, size, size);
+  g.fillStyle = '#000000';
+  for (let row = 0; row < modules; row++) {
+    for (let col = 0; col < modules; col++) {
+      if (qr.isDark(row, col)) {
+        g.fillRect((col + quiet) * cellSize, (row + quiet) * cellSize, cellSize, cellSize);
+      }
+    }
+  }
+
+  dom.qrHolder.textContent = '';   // wipe any prior spinner / error
+  dom.qrHolder.appendChild(canvas);
+  console.log('[Peer] QR rendered —', modules + 'x' + modules, 'modules,', size + 'px canvas for', id);
 }
 
 function closeMyQr() { dom.qrModal.classList.add('hidden'); }
