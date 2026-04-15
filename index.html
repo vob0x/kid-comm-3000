@@ -496,7 +496,7 @@ body[data-mode="bahnhof"]   .bg-bahnhof   { display: block; }
 /* ---- Top bar ---- */
 .top-bar {
   display: grid;
-  grid-template-columns: auto 1fr auto;
+  grid-template-columns: auto 1fr auto auto;
   align-items: center;
   gap: 10px;
   padding: 8px 12px;
@@ -506,6 +506,73 @@ body[data-mode="bahnhof"]   .bg-bahnhof   { display: block; }
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
   box-shadow: 0 0 20px rgba(0, 0, 0, 0.5), inset 0 0 20px rgba(0, 0, 0, 0.3);
+}
+/* Trophy badge: compact, visible, tappable — leads kids to the sticker wall */
+.trophy-btn {
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid var(--surface-border);
+  border-radius: 20px;
+  padding: 4px 10px;
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 12px;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+  transition: transform 120ms, box-shadow 120ms;
+}
+.trophy-btn:active { transform: scale(0.92); }
+.trophy-btn.flash { animation: trophyFlash 1.4s ease-out; }
+@keyframes trophyFlash {
+  0%   { box-shadow: 0 0 0 0 var(--primary-glow); transform: scale(1); }
+  35%  { box-shadow: 0 0 0 14px transparent; transform: scale(1.12); }
+  100% { box-shadow: 0 0 0 0 transparent; transform: scale(1); }
+}
+.trophy-icon { font-size: 16px; line-height: 1; }
+/* Sticker wall grid inside the trophies modal */
+.sticker-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  margin: 14px 0;
+}
+.sticker {
+  aspect-ratio: 1;
+  background: rgba(0, 0, 0, 0.4);
+  border: 1.5px solid var(--surface-border);
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 6px;
+  text-align: center;
+  opacity: 0.35;
+  filter: grayscale(1);
+  transition: opacity 200ms, filter 200ms, transform 200ms, box-shadow 200ms;
+}
+.sticker.unlocked {
+  opacity: 1;
+  filter: none;
+  box-shadow: 0 0 14px var(--primary-glow), inset 0 0 10px rgba(0, 0, 0, 0.5);
+  transform: scale(1);
+}
+.sticker-emoji { font-size: 34px; line-height: 1; }
+.sticker-title {
+  font-family: 'Orbitron', monospace;
+  font-size: 10px;
+  letter-spacing: 1px;
+  color: var(--primary);
+  margin-top: 4px;
+  line-height: 1.1;
+}
+.sticker-hint {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 9px;
+  color: var(--text-dim);
+  margin-top: 2px;
+  line-height: 1.2;
 }
 .power-btn {
   width: 46px;
@@ -1121,6 +1188,147 @@ body[data-talk="off"] .talk-btn {
   border-color: #555;
   box-shadow: none;
 }
+.modal-box input[type="text"] {
+  width: 100%;
+  box-sizing: border-box;
+  background: rgba(0, 0, 0, 0.6);
+  border: 1.5px solid var(--surface-border);
+  border-radius: 10px;
+  padding: 14px 16px;
+  font-family: 'Orbitron', monospace;
+  font-size: 18px;
+  letter-spacing: 3px;
+  text-align: center;
+  text-transform: uppercase;
+  color: var(--primary);
+  caret-color: var(--primary);
+  margin-top: 14px;
+  outline: none;
+}
+.modal-box input[type="text"]:focus {
+  box-shadow: 0 0 12px var(--primary-glow);
+}
+/* ───── Incoming-call full-screen announcement ───── */
+.incoming-call {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(ellipse at center, rgba(0,0,0,0.7) 0%, rgba(0,0,0,0.95) 100%);
+  animation: incomingPulse 0.7s ease-in-out infinite alternate;
+  cursor: pointer;
+}
+.incoming-call.hidden { display: none; }
+.incoming-call-inner {
+  text-align: center;
+  color: var(--primary);
+  padding: 20px;
+  max-width: 92vw;
+}
+.incoming-call-icon {
+  font-size: min(34vw, 180px);
+  line-height: 1;
+  filter: drop-shadow(0 0 30px var(--primary-glow));
+  animation: incomingIconShake 0.5s ease-in-out infinite alternate;
+}
+.incoming-call-name {
+  font-family: 'Orbitron', monospace;
+  font-size: min(12vw, 64px);
+  font-weight: 900;
+  letter-spacing: 4px;
+  text-transform: uppercase;
+  margin-top: 14px;
+  text-shadow: 0 0 24px var(--primary-glow);
+}
+.incoming-call-hint {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: min(6vw, 22px);
+  letter-spacing: 2px;
+  margin-top: 10px;
+  color: var(--text);
+  opacity: 0.85;
+}
+@keyframes incomingPulse {
+  from { background-color: rgba(0, 0, 0, 0.7); }
+  to   { background-color: var(--primary-glow); }
+}
+@keyframes incomingIconShake {
+  from { transform: rotate(-8deg) scale(1); }
+  to   { transform: rotate( 8deg) scale(1.06); }
+}
+
+/* ───── Partner-Gefunden-Feier: Schatzsuch-Finale ───── */
+.found-celebration {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  background: radial-gradient(ellipse at center, rgba(255, 220, 0, 0.35) 0%, rgba(0, 0, 0, 0.92) 80%);
+  animation: foundFlash 0.45s ease-in-out infinite alternate;
+}
+.found-celebration.hidden { display: none; }
+.found-inner {
+  text-align: center;
+  animation: foundScaleIn 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.found-icon {
+  font-size: min(36vw, 200px);
+  line-height: 1;
+  animation: foundSpin 1.2s ease-in-out infinite;
+  filter: drop-shadow(0 0 40px rgba(255, 220, 0, 0.8));
+}
+.found-title {
+  font-family: 'Orbitron', monospace;
+  font-size: min(14vw, 68px);
+  font-weight: 900;
+  letter-spacing: 4px;
+  color: #fff;
+  text-shadow: 0 0 28px #ffe000, 0 0 12px var(--primary-glow);
+  margin-top: 18px;
+  line-height: 1.0;
+}
+.found-name {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: min(7vw, 28px);
+  letter-spacing: 3px;
+  color: #ffe000;
+  margin-top: 14px;
+  min-height: 1em;
+}
+@keyframes foundFlash {
+  from { background: radial-gradient(ellipse at center, rgba(255, 220, 0, 0.25), rgba(0, 0, 0, 0.92)); }
+  to   { background: radial-gradient(ellipse at center, rgba(255, 220, 0, 0.55), rgba(0, 0, 0, 0.85)); }
+}
+@keyframes foundScaleIn {
+  from { transform: scale(0.4); opacity: 0; }
+  to   { transform: scale(1);   opacity: 1; }
+}
+@keyframes foundSpin {
+  0%   { transform: rotate(-15deg) scale(1.0); }
+  50%  { transform: rotate(15deg)  scale(1.15); }
+  100% { transform: rotate(-15deg) scale(1.0); }
+}
+/* Emoji confetti rain — 20 particles positioned by inline style, see JS */
+.found-confetti {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.found-confetti span {
+  position: absolute;
+  top: -10%;
+  font-size: 28px;
+  animation: foundRain 2.4s linear infinite;
+  will-change: transform;
+}
+@keyframes foundRain {
+  to { transform: translateY(120vh) rotate(540deg); }
+}
 #qrHolder {
   background: #fff;
   padding: 14px;
@@ -1340,6 +1548,10 @@ body[data-state="on"] .power-btn {
       <span class="mode-icon" id="modeIcon">🚓</span>
       <span class="mode-name" id="modeName">POLIZEI</span>
     </div>
+    <button class="trophy-btn" id="trophyBtn" aria-label="Trophäen">
+      <span class="trophy-icon">🏆</span>
+      <span id="trophyCount">0/0</span>
+    </button>
     <div class="conn-indicator">
       <span class="conn-dot"></span>
       <span class="conn-label"></span>
@@ -1461,6 +1673,45 @@ body[data-state="on"] .power-btn {
   </div>
 </div>
 
+<!-- First-run: ask kid for a nickname so calls are personalised -->
+<div class="modal hidden" id="nickModal">
+  <div class="modal-box">
+    <h2>WIE HEISST DU?</h2>
+    <p>Dein Funk-Name erscheint beim Freund.</p>
+    <input type="text" id="nickInput" maxlength="10" autocomplete="off" spellcheck="false"
+           placeholder="z. B. MAX" aria-label="Dein Funk-Name">
+    <button id="nickSaveBtn">FERTIG</button>
+  </div>
+</div>
+
+<!-- Full-screen incoming-call announcement; dismissed by tapping anywhere -->
+<div class="incoming-call hidden" id="incomingCall" role="alert" aria-live="assertive">
+  <div class="incoming-call-inner">
+    <div class="incoming-call-icon">📢</div>
+    <div class="incoming-call-name" id="incomingCallName">PARTNER</div>
+    <div class="incoming-call-hint">ruft dich!</div>
+  </div>
+</div>
+
+<!-- Sticker wall: tracks fun milestones kids unlock during play -->
+<div class="modal hidden" id="trophyModal">
+  <div class="modal-box">
+    <h2>TROPHÄEN</h2>
+    <div class="sticker-grid" id="stickerGrid"></div>
+    <button id="closeTrophyBtn" class="secondary">SCHLIESSEN</button>
+  </div>
+</div>
+
+<!-- Treasure-hunt finale: full-screen "PARTNER GEFUNDEN!" celebration -->
+<div class="found-celebration hidden" id="foundCelebration" role="alert" aria-live="assertive">
+  <div class="found-confetti" aria-hidden="true"></div>
+  <div class="found-inner">
+    <div class="found-icon">🎉</div>
+    <div class="found-title">PARTNER<br>GEFUNDEN!</div>
+    <div class="found-name" id="foundName"></div>
+  </div>
+</div>
+
 <!-- External libs -->
 <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
@@ -1531,9 +1782,29 @@ const BASE_ICE = Object.freeze([
 
 /** localStorage keys (compatible with V1/V2) */
 const STORAGE_KEYS = Object.freeze({
-  myId:    'kc_my_id_v1',
-  partner: 'kc_partner_id_v1',
+  myId:         'kc_my_id_v1',
+  partner:      'kc_partner_id_v1',
+  myNick:       'kc_my_nick_v1',
+  achievements: 'kc_achievements_v1',
 });
+
+/** Max length of the child-chosen nickname (fits the call-modal layout). */
+const NICK_MAX_LEN = 10;
+
+/**
+ * Achievements — positive-only milestones kids unlock through natural play.
+ * No point system, no time pressure, no way to "lose" one. Each unlock fires
+ * a toast plus a flash on the trophy badge; the sticker wall shows the full
+ * collection so kids see what else is waiting.
+ */
+const ACHIEVEMENTS = Object.freeze([
+  { id: 'first_connect',   emoji: '🏅', title: 'Erster Funk',    hint: 'Verbinde dich das erste Mal' },
+  { id: 'world_explorer',  emoji: '🌍', title: 'Alle Modi',      hint: 'Probiere alle Kanäle aus' },
+  { id: 'voice_wizard',    emoji: '🎭', title: 'Stimmen-Zauber', hint: 'Probiere alle Effekte aus' },
+  { id: 'loud_radio',      emoji: '📣', title: 'Lauter Funker',  hint: 'Sprich 10 Mal' },
+  { id: 'emergency_hero',  emoji: '🚨', title: 'Notfall-Held',   hint: 'Schicke dein erstes SOS' },
+  { id: 'partner_found',   emoji: '🧭', title: 'Gefunden!',      hint: 'Komme unter 10 m zum Partner' },
+]);
 
 /** Timing constants — all ms unless noted. Single source of truth. */
 const TIMING = Object.freeze({
@@ -1593,6 +1864,17 @@ const S = {
   conn: null,               // DataConnection
   call: null,               // MediaConnection
   transmitting: false,      // tap-to-talk toggle (UI-intent, not connection state)
+
+  // Identity (kid-facing display name — exchanged over DataChannel)
+  myNick: null,             // this device's chosen nickname
+  partnerNick: null,        // nickname received from the partner
+
+  // Achievements (persisted) + live counters used to trigger unlocks
+  achievements: null,       // Set<string> of unlocked IDs — loaded on power-up
+  _usedModes:   null,       // Set<number> of MODE indices seen
+  _usedEffects: null,       // Set<number> of EFFECT indices seen
+  _transmitCount: 0,        // number of talk-ups this session
+  _foundCelebrated: false,  // gate for the PARTNER GEFUNDEN! animation
 
   // Audio graph
   ctx: null,                // AudioContext
@@ -1674,6 +1956,18 @@ const dom = {
   closeQrBtn:     $('closeQrBtn'),
   scanModal:      $('scanModal'),
   closeScanBtn:   $('closeScanBtn'),
+  nickModal:      $('nickModal'),
+  nickInput:      $('nickInput'),
+  nickSaveBtn:    $('nickSaveBtn'),
+  incomingCall:   $('incomingCall'),
+  incomingCallName: $('incomingCallName'),
+  trophyBtn:      $('trophyBtn'),
+  trophyCount:    $('trophyCount'),
+  trophyModal:    $('trophyModal'),
+  closeTrophyBtn: $('closeTrophyBtn'),
+  stickerGrid:    $('stickerGrid'),
+  foundCelebration: $('foundCelebration'),
+  foundName:      $('foundName'),
   vizCanvas:      $('vizCanvas'),
   sigTag:         $('sigTag'),
   clockTag:       $('clockTag'),
@@ -2696,6 +2990,8 @@ async function onEnterPoweringUp(prev, ctx) {
   S._clockInterval = setInterval(updateClock, 1000);
   updateClock();
   startCompass();
+  loadAchievements();
+  maybePromptForNickname();
 
   // Capture the initial network type so the first handleNetworkChange
   // can compare against it and correctly detect the FIRST class swap.
@@ -2818,6 +3114,7 @@ function onEnterConnected(prev, ctx) {
   toast('Verbunden!');
   dom.sigTag.textContent = 'SIG: ████';
   CS.reconnectAttempt = 0;
+  unlockAchievement('first_connect');
   acquireAllKeepAlives();
   CS.stabilityTimer = setTimeout(() => {
     if (CS.state === CS_STATE.CONNECTED) {
@@ -3109,8 +3406,11 @@ function stopHeartbeat() {
 
 function bindDataConn(dc) {
   dc.on('open', () => {
+    // Greet the partner with our nickname so their ring announcement can
+    // read "MAX ruft dich!" instead of a generic placeholder.
+    if (S.myNick) { try { dc.send({ type: 'hello', nick: S.myNick }); } catch (_) {} }
     if (S.myPos) {
-      try { const m = { type: 'pos', lat: S.myPos.lat, lng: S.myPos.lng }; if (S._posIsIPBased) m.ip = true; dc.send(m); } catch(_) {}
+      try { const m = { type: 'pos', lat: S.myPos.lat, lng: S.myPos.lng }; if (S._posIsIPBased) m.ip = true; dc.send(m); } catch (_) {}
     }
     startHeartbeat();
   });
@@ -3118,12 +3418,15 @@ function bindDataConn(dc) {
   dc.on('data', (msg) => {
     try {
       const obj = (typeof msg === 'string') ? JSON.parse(msg) : msg;
-      if (obj.type === 'ping') { try { dc.send({ type: 'pong' }); } catch(_) {} return; }
+      if (obj.type === 'ping') { try { dc.send({ type: 'pong' }); } catch (_) {} return; }
       if (obj.type === 'pong') { _lastPong = Date.now(); return; }
-      if (obj.type === 'ring') {
+      if (obj.type === 'hello') {
+        S.partnerNick = sanitizeNick(obj.nick);
+        console.log('[DC] Partner nickname:', S.partnerNick);
+      } else if (obj.type === 'ring') {
         playModeBeep();
-        toast('📢 RUF empfangen');
-        vibrate([60, 40, 60]);
+        showIncomingCall();
+        vibrate([60, 40, 60, 40, 60]);
       } else if (obj.type === 'mode') {
         S.mode = obj.mode;
         applyMode(false);
@@ -3137,7 +3440,7 @@ function bindDataConn(dc) {
         S._partnerPosIsIPBased = !!obj.ip;
         updateCompass();
       }
-    } catch(e) { console.error(e); }
+    } catch (e) { console.error(e); }
   });
 
   dc.on('close', () => {
@@ -3199,6 +3502,10 @@ function cycleMode(delta) {
   _modeDebounce = now;
   S.mode = (S.mode + delta + MODES.length) % MODES.length;
   applyMode(true);
+  if (S._usedModes) {
+    S._usedModes.add(S.mode);
+    if (S._usedModes.size >= MODES.length) unlockAchievement('world_explorer');
+  }
 }
 
 async function cycleEffect() {
@@ -3208,6 +3515,10 @@ async function cycleEffect() {
   playClick(420, 0.04, 0.12);
   toast(fx.icon + ' ' + fx.name);
   vibrate(8);
+  if (S._usedEffects) {
+    S._usedEffects.add(S.effect);
+    if (S._usedEffects.size >= EFFECTS.length) unlockAchievement('voice_wizard');
+  }
 
   if (CS.state === CS_STATE.CONNECTED && S.call && S.call.peerConnection) {
     try {
@@ -3241,6 +3552,8 @@ function startTransmit() {
   if (dom.talkLabel) dom.talkLabel.textContent = 'STOPP';
   playSquelchOpen();
   vibrate(30);
+  S._transmitCount++;
+  if (S._transmitCount >= 10) unlockAchievement('loud_radio');
 }
 
 function stopTransmit() {
@@ -3267,6 +3580,7 @@ function sendSOS() {
   triggerSOSFlash();
   toast('🆘 SOS gesendet');
   vibrate([100, 60, 100, 60, 100]);
+  unlockAchievement('emergency_hero');
 }
 
 /**
@@ -3299,6 +3613,178 @@ function showMyQr() {
 }
 
 function closeMyQr() { dom.qrModal.classList.add('hidden'); }
+
+/* ─── Nickname: personalises the incoming-call announcement ─── */
+
+function sanitizeNick(raw) {
+  // Strip anything that wouldn't look right in the full-screen banner and
+  // cap at NICK_MAX_LEN so the layout never breaks. Upper-case for style.
+  return String(raw || '').trim().replace(/[^\w äöüÄÖÜß-]/g, '').slice(0, NICK_MAX_LEN).toUpperCase();
+}
+
+/**
+ * If this kid has never set a nickname, open the modal. Blocks only the
+ * modal, not the rest of power-up — user can cancel by leaving the input
+ * empty and tapping FERTIG (nothing is saved; modal reopens next launch).
+ */
+function maybePromptForNickname() {
+  const existing = store.get(STORAGE_KEYS.myNick);
+  if (existing) {
+    S.myNick = existing;
+    return;
+  }
+  dom.nickModal.classList.remove('hidden');
+  // Delay focus so the modal is painted before the keyboard pops up
+  setTimeout(() => { try { dom.nickInput.focus(); } catch (_) {} }, 120);
+}
+
+function saveNickFromInput() {
+  const nick = sanitizeNick(dom.nickInput.value);
+  if (nick) {
+    S.myNick = nick;
+    store.set(STORAGE_KEYS.myNick, nick);
+    if (S.conn && S.conn.open) { try { S.conn.send({ type: 'hello', nick }); } catch (_) {} }
+    toast('Funk-Name gespeichert: ' + nick);
+  }
+  dom.nickModal.classList.add('hidden');
+  dom.nickInput.value = '';
+}
+
+/* ─── Incoming-call full-screen announcement ─── */
+
+let _incomingCallTimer = null;
+
+function showIncomingCall() {
+  const label = S.partnerNick || 'FUNKFREUND';
+  dom.incomingCallName.textContent = label;
+  dom.incomingCall.classList.remove('hidden');
+  clearTimeout(_incomingCallTimer);
+  _incomingCallTimer = setTimeout(hideIncomingCall, 4000);
+}
+
+function hideIncomingCall() {
+  dom.incomingCall.classList.add('hidden');
+  clearTimeout(_incomingCallTimer);
+  _incomingCallTimer = null;
+}
+
+/* ─── Achievements ─── */
+
+/**
+ * Load the set of unlocked achievement IDs from localStorage and prime the
+ * live counters. Called once during POWERING_UP so the in-memory state is
+ * ready before any trigger could fire.
+ */
+function loadAchievements() {
+  try {
+    const raw = store.get(STORAGE_KEYS.achievements);
+    S.achievements = new Set(raw ? JSON.parse(raw) : []);
+  } catch (_) {
+    S.achievements = new Set();
+  }
+  S._usedModes = new Set();
+  S._usedEffects = new Set();
+  S._transmitCount = 0;
+  updateTrophyCount();
+}
+
+function persistAchievements() {
+  try { store.set(STORAGE_KEYS.achievements, JSON.stringify([...S.achievements])); } catch (_) {}
+}
+
+function updateTrophyCount() {
+  if (!dom.trophyCount || !S.achievements) return;
+  dom.trophyCount.textContent = S.achievements.size + '/' + ACHIEVEMENTS.length;
+}
+
+/**
+ * Mark an achievement as unlocked. Idempotent: re-calling with a known ID
+ * does nothing. Persists to localStorage, flashes the top-bar badge, and
+ * surfaces a toast so the kid actually sees what they earned.
+ */
+function unlockAchievement(id) {
+  if (!S.achievements || S.achievements.has(id)) return;
+  const meta = ACHIEVEMENTS.find((a) => a.id === id);
+  if (!meta) return;
+  S.achievements.add(id);
+  persistAchievements();
+  updateTrophyCount();
+  toast(meta.emoji + ' ' + meta.title);
+  vibrate([40, 60, 40]);
+  if (dom.trophyBtn) {
+    dom.trophyBtn.classList.remove('flash');
+    // Force reflow so the re-added class restarts the animation
+    void dom.trophyBtn.offsetWidth;
+    dom.trophyBtn.classList.add('flash');
+  }
+}
+
+function openTrophies() {
+  if (!S.achievements) return;
+  const frag = document.createDocumentFragment();
+  for (const a of ACHIEVEMENTS) {
+    const unlocked = S.achievements.has(a.id);
+    const cell = document.createElement('div');
+    cell.className = 'sticker' + (unlocked ? ' unlocked' : '');
+    cell.innerHTML =
+      '<div class="sticker-emoji">' + (unlocked ? a.emoji : '❓') + '</div>' +
+      '<div class="sticker-title">' + a.title + '</div>' +
+      '<div class="sticker-hint">' + (unlocked ? '✓ geschafft' : a.hint) + '</div>';
+    frag.appendChild(cell);
+  }
+  dom.stickerGrid.textContent = '';
+  dom.stickerGrid.appendChild(frag);
+  dom.trophyModal.classList.remove('hidden');
+}
+
+function closeTrophies() { dom.trophyModal.classList.add('hidden'); }
+
+/* ─── Partner-Gefunden-Feier ─── */
+
+/** Ascending major arpeggio — the "found you!" fanfare. Uses playTone. */
+function playFoundFanfare() {
+  if (!S.ctx) return;
+  playTone(523.25, 0.14, 0.24, 'square', 0.00); // C5
+  playTone(659.25, 0.14, 0.24, 'square', 0.14); // E5
+  playTone(783.99, 0.14, 0.24, 'square', 0.28); // G5
+  playTone(1046.5, 0.38, 0.30, 'square', 0.42); // C6
+}
+
+/**
+ * Lay out 20 confetti emojis across the top of the found-celebration
+ * overlay, each with a random horizontal position, delay and drift so
+ * the rain looks organic. Called every time the celebration fires.
+ */
+function buildFoundConfetti() {
+  const host = dom.foundCelebration.querySelector('.found-confetti');
+  if (!host) return;
+  host.textContent = '';
+  const emojis = ['🎉', '⭐', '🎊', '✨', '🏆', '💫'];
+  for (let i = 0; i < 20; i++) {
+    const span = document.createElement('span');
+    span.textContent = emojis[i % emojis.length];
+    span.style.left = (Math.random() * 100) + '%';
+    span.style.animationDelay = (Math.random() * 1.2) + 's';
+    span.style.animationDuration = (1.8 + Math.random() * 1.6) + 's';
+    span.style.fontSize = (22 + Math.random() * 20) + 'px';
+    host.appendChild(span);
+  }
+}
+
+/**
+ * Full-screen celebration for when GPS distance drops below 10 m.
+ * Gated by S._foundCelebrated so it fires at most once per proximity
+ * event (reset in updateCompass when dist rises back above 50 m).
+ */
+function triggerPartnerFound() {
+  S._foundCelebrated = true;
+  dom.foundName.textContent = S.partnerNick ? 'Du hast ' + S.partnerNick + ' erwischt!' : '';
+  buildFoundConfetti();
+  dom.foundCelebration.classList.remove('hidden');
+  playFoundFanfare();
+  vibrate([100, 60, 100, 60, 200]);
+  setTimeout(() => dom.foundCelebration.classList.add('hidden'), 4500);
+}
 
 async function openScanner() {
   if (!canPair()) { toast('Funkgerät nicht bereit'); return; }
@@ -3426,6 +3912,16 @@ function updateCompass() {
       else if (dist < 100) setProximity('close');
       else if (dist < 500) setProximity('medium');
       else                 setProximity('far');
+    }
+    // Treasure-hunt reward: real-GPS positions only, no IP fallback.
+    // Fires the achievement AND the big "PARTNER GEFUNDEN!" celebration
+    // exactly once per proximity event — has to go back above the
+    // resetThreshold before another party can trigger it.
+    if (dist < 10 && !S._posIsIPBased && !S._partnerPosIsIPBased) {
+      if (!S._foundCelebrated) triggerPartnerFound();
+      unlockAchievement('partner_found');
+    } else if (dist > 50) {
+      S._foundCelebrated = false;
     }
   } else {
     dom.compass.classList.remove('has-partner');
@@ -3865,6 +4361,22 @@ dom.fxBtn.addEventListener('click', cycleEffect);
 dom.sosBtn.addEventListener('click', sendSOS);
 dom.closeQrBtn.addEventListener('click', closeMyQr);
 dom.closeScanBtn.addEventListener('click', closeScanner);
+
+// Nickname modal: save on button-tap or Enter in the input
+dom.nickSaveBtn.addEventListener('click', saveNickFromInput);
+dom.nickInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') { e.preventDefault(); saveNickFromInput(); }
+});
+
+// Incoming-call banner: tap anywhere to dismiss early
+dom.incomingCall.addEventListener('click', hideIncomingCall);
+
+// Trophy wall
+dom.trophyBtn.addEventListener('click', openTrophies);
+dom.closeTrophyBtn.addEventListener('click', closeTrophies);
+
+// Partner-Gefunden-Feier: tap anywhere to dismiss the overlay early
+dom.foundCelebration.addEventListener('click', () => dom.foundCelebration.classList.add('hidden'));
 
 document.addEventListener('dblclick', (e) => e.preventDefault());
 document.addEventListener('gesturestart', (e) => e.preventDefault());
