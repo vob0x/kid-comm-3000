@@ -1823,6 +1823,7 @@ const TIMING = Object.freeze({
   maxTeardowns:       3,         // teardowns before hard backoff
   iceDisconnectTimeout: 15000,   // stuck disconnected this long → force reconnect
   shortHiccup:        5000,      // hidden below this → skip peer reinit
+  longSleep:          30000,     // hidden above this → ICE state is stale, force full reinit
 
   // PeerJS ID recovery after background/sleep
   unavailableIdRetries: 10,      // retries before falling back to temp ID
@@ -4211,16 +4212,30 @@ document.addEventListener('visibilitychange', () => {
     return;
   }
   const hiddenMs = Date.now() - CS.hiddenAt;
-  console.log('[Visibility] Visible again after', Math.round(hiddenMs / 1000), 's');
+  console.log('[Visibility] Resume after', Math.round(hiddenMs / 1000), 's, state:', CS.state);
   if (S.ctx && S.ctx.state === 'suspended') {
     S.ctx.resume().then(() => console.log('[Audio] Context resumed'));
   }
   if (CS.state === CS_STATE.CONNECTED || S.partnerId) acquireAllKeepAlives();
 
-  // Short hiccup and we're connected → trust ICE, let it self-heal
-  if (hiddenMs < TIMING.shortHiccup && CS.state === CS_STATE.CONNECTED) return;
+  // Tier 1 — short hiccup (≤ shortHiccup): trust everything, nothing to do.
+  if (hiddenMs < TIMING.shortHiccup) return;
 
-  // Connected but long nap → check ICE; trigger reconnect if stuck
+  // Tier 3 — long sleep (≥ longSleep): on mobile, JS was suspended and every
+  // ICE / broker / call event we missed is lost. pc.iceConnectionState lies
+  // (still reads 'connected' because the state variable froze at suspend
+  // time). Treat the connection as dead regardless of what it claims and
+  // force a full peer reinit. This is what survived background reliably
+  // before the state-machine redesign and is restored here.
+  if (hiddenMs >= TIMING.longSleep && S.partnerId) {
+    console.log('[Visibility] Long sleep — assume connection dead, force reinit');
+    toast('Verbinde neu nach Ruhemodus…');
+    setConnState(CS_STATE.RECONNECTING, { reason: 'resume_long_sleep', forceReinit: true });
+    return;
+  }
+
+  // Tier 2 — medium sleep (shortHiccup ≤ hiddenMs < longSleep): ICE state
+  // is still plausibly fresh, so check it and react.
   if (CS.state === CS_STATE.CONNECTED && S.call && S.call.peerConnection) {
     const pc = S.call.peerConnection;
     const iceState = pc.iceConnectionState;
