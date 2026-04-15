@@ -1570,7 +1570,7 @@ function dlog(msg) {
       orig[level].apply(console, args);
       const s = args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ');
       // Only capture connection-related messages
-      if (/\[ICE\]|\[Peer\]|\[NET\]|\[TURN\]|\[Reconnect\]|\[Heartbeat\]|\[Compass\]|\[GPS\]/i.test(s)) {
+      if (/\[(?:ICE|Peer|NET|TURN|Reconnect|Heartbeat|Compass|GPS|DC|Call)\]/i.test(s)) {
         dlog((level === 'error' ? '❌ ' : level === 'warn' ? '⚠️ ' : '') + s);
       }
     };
@@ -2420,6 +2420,13 @@ function bindCall(call) {
     if (state.myPos && state.conn && state.conn.open) {
       try { const _pm = { type: 'pos', lat: state.myPos.lat, lng: state.myPos.lng }; if (state._posIsIPBased) _pm.ip = true; state.conn.send(_pm); } catch(_) {}
     }
+
+    // PeerJS creates the Call's RTCPeerConnection independently of the
+    // DataChannel's. The DC can get stuck in ICE-checking while the Call
+    // negotiates cleanly — voice works, but ring/SOS/mode never reach the
+    // partner because state.conn.open stays false. Watchdog re-initiates
+    // peer.connect() up to 3 times every 4 s until the DC actually opens.
+    ensureDataChannelOpens(call.peer);
   });
   call.on('close', () => {
     // CRITICAL: If state.call has been replaced (e.g. by an incoming call),
@@ -2529,6 +2536,7 @@ function teardownAndReconnect() {
   stopHeartbeat();
   stopTransmit();
   clearTimeout(_reconnectTimer);
+  clearTimeout(state._dcWatchdog); state._dcWatchdog = null; state._dcRetries = 0;
   if (state.call) { try { state.call.close(); } catch(_) {} }
   if (state.conn) { try { state.conn.close(); } catch(_) {} }
   state.call = null;
@@ -2650,8 +2658,46 @@ function stopHeartbeat() {
   if (_heartbeatInterval) { clearInterval(_heartbeatInterval); _heartbeatInterval = null; }
 }
 
+/**
+ * Watchdog for the DataChannel. PeerJS creates the DC's RTCPeerConnection
+ * separately from the Call's, so it can get stuck in ICE-checking while
+ * the Call negotiates cleanly — voice works, but ring / SOS / mode
+ * messages silently fail because state.conn.open is false. We re-initiate
+ * peer.connect() up to 3 times every 4 s until the DC actually opens.
+ * Cleared once dc.on('open') fires.
+ */
+function ensureDataChannelOpens(partnerId) {
+  clearTimeout(state._dcWatchdog);
+  state._dcRetries = state._dcRetries || 0;
+  state._dcWatchdog = setTimeout(() => {
+    state._dcWatchdog = null;
+    if (!state.powered || !state.connected) return;
+    if (state.conn && state.conn.open) { state._dcRetries = 0; return; }
+    if (state._dcRetries >= 3) {
+      console.warn('[DC] Still not open after 3 retries — giving up');
+      toast('⚠ Ruf/SOS nicht verfügbar');
+      return;
+    }
+    state._dcRetries++;
+    console.warn('[DC] Not open, retry #' + state._dcRetries);
+    try { if (state.conn) state.conn.close(); } catch(_) {}
+    try {
+      const dc = state.peer.connect(partnerId, { reliable: true });
+      state.conn = dc;
+      bindDataConn(dc);
+    } catch (e) {
+      console.error('[DC] connect retry failed:', e && e.message);
+    }
+    ensureDataChannelOpens(partnerId);
+  }, 4000);
+}
+
 function bindDataConn(dc) {
   dc.on('open', () => {
+    console.log('[DC] open with', dc.peer);
+    clearTimeout(state._dcWatchdog);
+    state._dcWatchdog = null;
+    state._dcRetries = 0;
     // Send own position immediately so partner compass works right away
     if (state.myPos) {
       try { const _pm = { type: 'pos', lat: state.myPos.lat, lng: state.myPos.lng }; if (state._posIsIPBased) _pm.ip = true; dc.send(_pm); } catch(_) {}
@@ -3679,6 +3725,8 @@ function powerOff() {
   clearTimeout(_reconnectTimer); _reconnectTimer = null;
   clearTimeout(state._stabilityTimer); state._stabilityTimer = null;
   clearTimeout(state._safetyTimeout); state._safetyTimeout = null;
+  clearTimeout(state._dcWatchdog); state._dcWatchdog = null;
+  state._dcRetries = 0;
   _reconnectAttempt = 0; _teardownCount = 0; _isReconnecting = false;
   _turnFetchedAt = 0; // force fresh TURN on next power-on
   // Stop clock + visualizer
