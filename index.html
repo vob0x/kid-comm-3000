@@ -1550,7 +1550,6 @@ const TIMING = Object.freeze({
   stabilityWindow:    30000,     // connection stable this long → reset teardown counter
   teardownCooldown:   10000,     // teardowns within this gap count against the cap
   maxTeardowns:       3,         // teardowns before hard backoff
-  reconnectMax:       20000,     // max backoff between reconnects
   iceDisconnectTimeout: 15000,   // stuck disconnected this long → force reconnect
   shortHiccup:        5000,      // hidden below this → skip peer reinit
 
@@ -1582,9 +1581,6 @@ const TIMING = Object.freeze({
  * code should not inspect directly.
  */
 const S = {
-  // Power
-  powered: false,
-
   // Mode & effects
   mode: 0,
   effect: 0,
@@ -1593,11 +1589,9 @@ const S = {
   peer: null,
   myId: null,
   partnerId: null,
-  autoConnectTried: false,
   conn: null,               // DataConnection
   call: null,               // MediaConnection
-  connected: false,
-  transmitting: false,
+  transmitting: false,      // tap-to-talk toggle (UI-intent, not connection state)
 
   // Audio graph
   ctx: null,                // AudioContext
@@ -1630,12 +1624,10 @@ const S = {
   _compassSensor: null,
   _compassListeners: null,  // { onAbsolute, onEvent } for cleanup
 
-  // Timers & animation
+  // Timers & animation (audio/UI only — all connection timers live in CS)
   _clockInterval: null,
   _vizRafId: null,
   _vizResizeHandler: null,
-  _stabilityTimer: null,
-  _safetyTimeout: null,
 };
 
 /* ────────────────────────────────────────────────────────────
@@ -2159,10 +2151,10 @@ async function ensureMic() {
 }
 
 async function rebuildOutgoingStream() {
-  if (!S.powered) return null;
+  if (!isPoweredOn()) return null;
   await initAudio();
   await ensureMic();
-  if (!S.powered) return null;
+  if (!isPoweredOn()) return null;
   disposeEffectChain();
   const ctx = S.ctx;
   const chain = buildEffectChain(EFFECTS[S.effect].name);
@@ -2310,21 +2302,69 @@ function setupViz() {
 }
 
 
-/* §11 ─── PEERJS / WEBRTC ────────────────────────────────────── */
 
+/* §11 ─── CONNECTION STATE MACHINE + WEBRTC ──────────────────── *
+ * Single source of truth for every pair / connect / reconnect flow.
+ * External code (UI handlers, network events, heartbeat, resume)
+ * only triggers transitions via setConnState(); no one writes
+ * CS.state directly, no one creates or destroys peer/call/conn
+ * outside the onEnter/onLeave handlers. This structurally removes
+ * the class of bugs where two parallel paths both think they own
+ * the connection.
+ * ─────────────────────────────────────────────────────────────── */
+
+const CS_STATE = Object.freeze({
+  OFF:                 'OFF',
+  POWERING_UP:         'POWERING_UP',
+  PEER_OPENING:        'PEER_OPENING',
+  READY_NO_PARTNER:    'READY_NO_PARTNER',
+  READY_WITH_PARTNER:  'READY_WITH_PARTNER',
+  CONNECTING:          'CONNECTING',
+  CONNECTED:           'CONNECTED',
+  RECONNECTING:        'RECONNECTING',
+});
+
+/** Runtime connection-flow state and bookkeeping. */
+const CS = {
+  state: CS_STATE.OFF,
+  enteredAt: 0,
+
+  // Retry counters (reset at successful CONNECTED)
+  unavailableRetries: 0,
+  reconnectAttempt:   0,
+  teardownCount:      0,
+  lastTeardownAt:     0,
+
+  // Flags for unusual paths
+  usingTempId:        false,
+  autoConnectOnOpen:  false,
+
+  // Pending timers (each cleared in the matching onLeaveState branch)
+  autoConnectTimer:   null,
+  reconnectTimer:     null,
+  safetyTimer:        null,
+  stabilityTimer:     null,
+  unavailableIdTimer: null,
+  brokerReconnectTimer: null,
+
+  // Context
+  pendingTargetId:    null,
+  hiddenAt:           0,
+};
+
+/** ICE server list — rewritten when TURN credentials refresh. */
 let ICE_SERVERS = [...BASE_ICE];
 let _turnFetchedAt = 0;
 
+/* ─────────────── TURN / ICE UTILITIES ─────────────── */
+
 /**
- * Fetch dynamic Metered TURN credentials from any of the known endpoints.
- * The account is optional — if it fails, BASE_ICE still contains the
- * static OpenRelay TURN as a permanent public fallback, so WLAN↔cellular
- * works either way. We try multiple API hosts because Metered has
- * rotated domains over time (.live vs .ca, app-subdomain vs global).
+ * Fetch dynamic Metered TURN credentials. BASE_ICE already carries the
+ * static OpenRelay TURN, so a failed fetch does not break WLAN↔cellular.
  */
 async function fetchTurnServers() {
   if (!TURN_CONFIG.app || !TURN_CONFIG.key) {
-    console.log('[TURN] No Metered account configured — using BASE_ICE only');
+    console.log('[TURN] No Metered account configured — BASE_ICE only');
     return [];
   }
   const { app, key } = TURN_CONFIG;
@@ -2349,18 +2389,14 @@ async function fetchTurnServers() {
       console.warn('[TURN] Fetch failed:', e.name || '', e.message || '');
     }
   }
-  console.warn('[TURN] Metered unreachable — relying on BASE_ICE (OpenRelay)');
+  console.warn('[TURN] Metered unreachable — BASE_ICE only');
   return [];
 }
 
 /**
- * Probe whether the current ICE_SERVERS yield any relay candidates on this
- * network. Uses a throwaway RTCPeerConnection to gather candidates for up
- * to `timeoutMs`, then returns:
- *   { relay: true/false, types: Set<'host'|'srflx'|'relay'>, protocols: Set<'udp'|'tcp'> }
- * A `relay: false` result means WLAN↔cellular will almost certainly fail
- * on this network — the operator or carrier is blocking TURN, or the
- * configured credentials are invalid.
+ * Probe whether any relay candidate can be gathered on this network.
+ * Returns { relay, types, protocols }. A "relay:false" result means
+ * WLAN↔cellular will almost certainly fail on this network.
  */
 async function probeTurn(timeoutMs = 4000) {
   const types = new Set();
@@ -2372,9 +2408,7 @@ async function probeTurn(timeoutMs = 4000) {
     console.warn('[TURN] Probe RTCPeerConnection failed:', e.message);
     return { relay: false, types, protocols };
   }
-  // A data channel forces ICE gathering
   try { pc.createDataChannel('probe'); } catch (_) {}
-
   return new Promise((resolve) => {
     const deadline = setTimeout(finish, timeoutMs);
     pc.addEventListener('icecandidate', (ev) => {
@@ -2382,12 +2416,9 @@ async function probeTurn(timeoutMs = 4000) {
       const c = ev.candidate;
       if (c.type)     types.add(c.type);
       if (c.protocol) protocols.add(c.protocol);
-      if (c.type === 'relay') finish(); // early exit: relay found
+      if (c.type === 'relay') finish();
     });
-    pc.createOffer()
-      .then((offer) => pc.setLocalDescription(offer))
-      .catch(() => finish());
-
+    pc.createOffer().then((o) => pc.setLocalDescription(o)).catch(() => finish());
     function finish() {
       clearTimeout(deadline);
       try { pc.close(); } catch (_) {}
@@ -2401,12 +2432,7 @@ async function probeTurn(timeoutMs = 4000) {
   });
 }
 
-/**
- * Refresh TURN credentials if older than TIMING.turnMaxAge.
- * Returns true when ICE_SERVERS was replaced with a new list — the caller
- * must then recreate any existing peer so the new credentials take effect
- * (PeerJS captures iceServers at RTCPeerConnection creation time).
- */
+/** Refresh TURN credentials if stale. Returns true when ICE_SERVERS actually changed. */
 async function refreshTurnIfNeeded() {
   if (Date.now() - _turnFetchedAt < TIMING.turnMaxAge) return false;
   console.log('[TURN] Credentials stale — refreshing');
@@ -2423,12 +2449,9 @@ async function refreshTurnIfNeeded() {
 }
 
 /**
- * After a call connects, inspect getStats() and log which candidate pair
- * won the ICE race. Critical for diagnosing WLAN↔cellular problems:
- *   host ↔ host    — same network
- *   srflx ↔ srflx  — direct via STUN, one NAT on each side
- *   relay ↔ *      — going through TURN (mandatory for symmetric-NAT mobile)
- * If we see "No relay candidates gathered" we know TURN never came up.
+ * Log the nominated ICE candidate pair after a call connects. Writing
+ * the result to the debug overlay makes it obvious at a glance whether
+ * a connection went direct, via STUN, or relayed via TURN.
  */
 function reportIceDiagnostics(pc) {
   if (!pc.getStats) return;
@@ -2437,98 +2460,450 @@ function reportIceDiagnostics(pc) {
     let localRelayGathered = false;
     stats.forEach((r) => {
       if (r.type === 'candidate-pair' && r.state === 'succeeded' && r.nominated) {
-        nominated = {
-          local:  stats.get(r.localCandidateId),
-          remote: stats.get(r.remoteCandidateId),
-        };
+        nominated = { local: stats.get(r.localCandidateId), remote: stats.get(r.remoteCandidateId) };
       }
-      if (r.type === 'local-candidate' && r.candidateType === 'relay') {
-        localRelayGathered = true;
-      }
+      if (r.type === 'local-candidate' && r.candidateType === 'relay') localRelayGathered = true;
     });
     if (nominated) {
       const lt = nominated.local  && nominated.local.candidateType  || '?';
       const rt = nominated.remote && nominated.remote.candidateType || '?';
       const proto = nominated.local && nominated.local.protocol;
       console.log('[ICE pair]', lt, '→', rt, proto ? '(' + proto + ')' : '');
-      if (lt === 'relay' || rt === 'relay') {
-        toast('Verbindung über TURN-Relay');
-      }
+      if (lt === 'relay' || rt === 'relay') toast('Verbindung über TURN-Relay');
     }
     if (!localRelayGathered) {
-      console.warn('[ICE] No relay candidates gathered — TURN unreachable. WLAN↔Mobilfunk may fail.');
+      console.warn('[ICE] No relay candidates gathered — WLAN↔Mobilfunk may fail');
     }
   }).catch((e) => console.warn('[ICE] getStats failed:', e.message));
 }
 
 /**
- * Create a PeerJS Peer with the current ICE servers and sensible defaults.
- * Centralised so iceCandidatePoolSize + iceServers stay in sync everywhere.
- *
- * `iceCandidatePoolSize: 4` pre-gathers candidates when the Peer is created,
- * so the first call/answer doesn't pay full ICE-gathering latency. 4 is
- * enough for STUN + TURN UDP/TCP without wasting bandwidth.
+ * Construct a PeerJS Peer with the current ICE servers and a small
+ * candidate pool, so the first call has ICE candidates pre-gathered.
  */
 function createPeer(id) {
   return new Peer(id || undefined, {
     debug: 1,
-    config: {
-      iceServers: ICE_SERVERS,
-      iceCandidatePoolSize: 4,
-    },
+    config: { iceServers: ICE_SERVERS, iceCandidatePoolSize: 4 },
   });
 }
 
-async function fullPeerReinit() {
-  console.log('[Peer] Full reinit — destroying old peer, refreshing TURN');
-  if (S.peer) {
-    try { S.peer.destroy(); } catch(_) {}
-    S.peer = null;
-  }
-  S.call = null;
-  S.conn = null;
-  S.connected = false;
-  _unavailableIdRetries = 0;
-  _turnFetchedAt = 0;
-  await refreshTurnIfNeeded();
-  initPeer();
-  return waitForPeerOpen(8000);
+/** Poll-based peer-open wait; resilient to S.peer reference swaps. */
+function waitForPeerOpen(timeoutMs = 6000) {
+  return new Promise((resolve) => {
+    const deadline = Date.now() + timeoutMs;
+    if (isPeerOpen()) { resolve(true); return; }
+    const timer = setInterval(() => {
+      if (isPeerOpen()) { clearInterval(timer); resolve(true); }
+      else if (Date.now() >= deadline) { clearInterval(timer); resolve(false); }
+    }, 200);
+  });
 }
 
-function isPeerReady() {
+function isPeerOpen() {
   return !!(S.peer && S.myId && !S.peer.disconnected && !S.peer.destroyed);
 }
 
-let _unavailableIdRetries = 0;
-let _brokerReconnectTimer = null;
-let _lastBrokerDisconnect = 0;
-let _usingTempId = false;
+/* ─────────────── STATE-MACHINE CORE ─────────────── */
+
+function setConnState(next, ctx = {}) {
+  if (CS.state === next) return;
+  const from = CS.state;
+  const dwell = CS.enteredAt ? Math.round((Date.now() - CS.enteredAt) / 100) / 10 : 0;
+  console.log('[State]', from, '→', next,
+    ctx.reason ? '(' + ctx.reason + ')' : '',
+    dwell ? '[' + dwell + 's]' : '');
+  onLeaveState(from, next);
+  CS.state = next;
+  CS.enteredAt = Date.now();
+  onEnterState(next, from, ctx);
+  renderConnUI();
+}
+
+/** True while the app is in a state where a QR or scan makes sense. */
+function canPair() {
+  return CS.state === CS_STATE.READY_NO_PARTNER
+      || CS.state === CS_STATE.READY_WITH_PARTNER
+      || CS.state === CS_STATE.CONNECTING
+      || CS.state === CS_STATE.CONNECTED
+      || CS.state === CS_STATE.RECONNECTING;
+}
+
+function isPoweredOn() {
+  return CS.state !== CS_STATE.OFF && CS.state !== CS_STATE.POWERING_UP;
+}
+
+/** Map the connection state onto the body dataset for CSS-driven UI. */
+function renderConnUI() {
+  const s = CS.state;
+  const conn =
+    s === CS_STATE.CONNECTED    ? 'connected' :
+    s === CS_STATE.CONNECTING   ? 'connecting' :
+    s === CS_STATE.RECONNECTING ? 'connecting' :
+    s === CS_STATE.OFF          ? 'off' :
+    s === CS_STATE.POWERING_UP  ? 'off' :
+    /* PEER_OPENING / READY_* */ 'ready';
+  dom.body.dataset.conn = conn;
+  setTalk(s === CS_STATE.CONNECTED ? 'on' : 'off');
+}
+
+/* ─── Timer helpers ─── */
+function cancelAutoConnect()       { if (CS.autoConnectTimer)       { clearTimeout(CS.autoConnectTimer);       CS.autoConnectTimer = null; } }
+function clearSafetyTimer()        { if (CS.safetyTimer)            { clearTimeout(CS.safetyTimer);            CS.safetyTimer = null; } }
+function clearStabilityTimer()     { if (CS.stabilityTimer)         { clearTimeout(CS.stabilityTimer);         CS.stabilityTimer = null; } }
+function clearReconnectTimer()     { if (CS.reconnectTimer)         { clearTimeout(CS.reconnectTimer);         CS.reconnectTimer = null; } }
+function clearUnavailableIdTimer() { if (CS.unavailableIdTimer)     { clearTimeout(CS.unavailableIdTimer);     CS.unavailableIdTimer = null; } }
+function clearBrokerTimer()        { if (CS.brokerReconnectTimer)   { clearTimeout(CS.brokerReconnectTimer);   CS.brokerReconnectTimer = null; } }
+
+function scheduleAutoConnect(delayMs) {
+  cancelAutoConnect();
+  CS.autoConnectTimer = setTimeout(() => {
+    CS.autoConnectTimer = null;
+    if (CS.state === CS_STATE.READY_WITH_PARTNER && S.partnerId) {
+      setConnState(CS_STATE.CONNECTING, { reason: 'auto_connect', targetId: S.partnerId });
+    }
+  }, delayMs);
+}
+
+/** Force destroy peer and create a fresh one, refreshing TURN first. */
+async function runFullPeerReinit() {
+  console.log('[Peer] Full reinit — destroy + fresh peer + refresh TURN');
+  if (S.peer) { try { S.peer.destroy(); } catch (_) {} S.peer = null; }
+  S.call = null; S.conn = null;
+  _turnFetchedAt = 0;
+  CS.unavailableRetries = 0;
+  await refreshTurnIfNeeded();
+  const savedId = store.get(STORAGE_KEYS.myId);
+  const useId = savedId && /^[A-Za-z0-9_-]{1,40}$/.test(savedId) ? savedId : null;
+  CS.usingTempId = false;
+  S.peer = createPeer(useId);
+  bindPeerEvents(S.peer);
+  return waitForPeerOpen(8000);
+}
+
+/* ─────────────── onEnter / onLeave ─────────────── */
+
+function onEnterState(next, prev, ctx) {
+  switch (next) {
+    case CS_STATE.OFF:                return onEnterOff(prev, ctx);
+    case CS_STATE.POWERING_UP:        return onEnterPoweringUp(prev, ctx);
+    case CS_STATE.PEER_OPENING:       return onEnterPeerOpening(prev, ctx);
+    case CS_STATE.READY_NO_PARTNER:   return onEnterReadyNoPartner(prev, ctx);
+    case CS_STATE.READY_WITH_PARTNER: return onEnterReadyWithPartner(prev, ctx);
+    case CS_STATE.CONNECTING:         return onEnterConnecting(prev, ctx);
+    case CS_STATE.CONNECTED:          return onEnterConnected(prev, ctx);
+    case CS_STATE.RECONNECTING:       return onEnterReconnecting(prev, ctx);
+  }
+}
+
+function onLeaveState(prev, next) {
+  // Each state owns specific timers — clear them when leaving.
+  if (prev === CS_STATE.READY_WITH_PARTNER) cancelAutoConnect();
+  if (prev === CS_STATE.CONNECTING)         clearSafetyTimer();
+  if (prev === CS_STATE.CONNECTED)          { stopHeartbeat(); clearStabilityTimer(); }
+  if (prev === CS_STATE.RECONNECTING)       clearReconnectTimer();
+  if (prev === CS_STATE.PEER_OPENING)       clearUnavailableIdTimer();
+}
+
+/* ─── OFF ─── */
+function onEnterOff(prev, ctx) {
+  window.removeEventListener('online', handleNetworkOnline);
+  if (navigator.connection) navigator.connection.removeEventListener('change', handleNetworkChange);
+  releaseAllKeepAlives();
+  stopHeartbeat();
+  cancelAutoConnect();
+  clearReconnectTimer();
+  clearSafetyTimer();
+  clearStabilityTimer();
+  clearUnavailableIdTimer();
+  clearBrokerTimer();
+
+  if (S._clockInterval)    { clearInterval(S._clockInterval); S._clockInterval = null; }
+  if (S._vizRafId)         { cancelAnimationFrame(S._vizRafId); S._vizRafId = null; }
+  if (S._vizResizeHandler) { window.removeEventListener('resize', S._vizResizeHandler); S._vizResizeHandler = null; }
+  _dialRot = 0; _partnerRot = 0;
+
+  CS.unavailableRetries = 0;
+  CS.reconnectAttempt   = 0;
+  CS.teardownCount      = 0;
+  CS.usingTempId        = false;
+  CS.autoConnectOnOpen  = false;
+  CS.pendingTargetId    = null;
+  _turnFetchedAt        = 0;
+
+  if (prev !== CS_STATE.OFF) playShutdownSequence();
+  stopTransmit();
+  try { if (S.call) S.call.close(); } catch (_) {}
+  try { if (S.conn) S.conn.close(); } catch (_) {}
+  try { if (S.peer) S.peer.destroy(); } catch (_) {}
+  try { if (S.rawStream) S.rawStream.getTracks().forEach((t) => t.stop()); } catch (_) {}
+  try { if (S.remoteAudioEl) { S.remoteAudioEl.srcObject = null; S.remoteAudioEl.remove(); } } catch (_) {}
+  disposeEffectChain();
+  S.peer = null; S.call = null; S.conn = null;
+  S.rawStream = null; S.outStream = null; S.remoteStream = null; S.remoteAudioEl = null;
+  stopCompass();
+
+  setTimeout(() => {
+    try { if (S.staticGain) S.staticGain.disconnect(); } catch (_) {}
+    try { if (S.ctx)        S.ctx.close();              } catch (_) {}
+    S.ctx = null; S.staticGain = null;
+    S.rxFilter = null; S.rxDistortion = null;
+    S.rxAnalyser = null; S.txAnalyser = null;
+    S.outMute = null;
+    dom.body.dataset.state = 'off';
+  }, 700);
+}
+
+/* ─── POWERING_UP ─── */
+async function onEnterPoweringUp(prev, ctx) {
+  dom.body.dataset.state = 'on';
+  try { await initAudio(); }
+  catch (e) { console.error(e); toast('Audio-Fehler'); setConnState(CS_STATE.OFF, { reason: 'audio_failed' }); return; }
+
+  // Geolocation prompt first (Firefox suppresses the second prompt otherwise)
+  try {
+    await new Promise((resolve) => {
+      const timer = setTimeout(resolve, 4000);
+      navigator.geolocation.getCurrentPosition(
+        () => { clearTimeout(timer); resolve(); },
+        () => { clearTimeout(timer); resolve(); },
+        { enableHighAccuracy: false, maximumAge: Infinity, timeout: 3000 });
+    });
+  } catch (_) {}
+
+  try {
+    const s = await navigator.mediaDevices.getUserMedia({ audio: true });
+    s.getTracks().forEach((t) => t.stop());
+  } catch (_) { toast('Mikrofon nötig!'); }
+
+  playStartupSequence();
+  applyMode(false);
+  setupViz();
+  S._clockInterval = setInterval(updateClock, 1000);
+  updateClock();
+  startCompass();
+
+  window.addEventListener('online', handleNetworkOnline);
+  if (navigator.connection) navigator.connection.addEventListener('change', handleNetworkChange);
+
+  toast('Funkgerät wird bereit…');
+  setConnState(CS_STATE.PEER_OPENING, { reason: 'power_up_done' });
+
+  // TURN fetch + probe in the background — peer is already opening
+  (async () => {
+    const turnServers = await fetchTurnServers().catch(() => []);
+    if (CS.state === CS_STATE.OFF) return;
+    if (turnServers.length > 0) {
+      ICE_SERVERS = [...BASE_ICE, ...turnServers];
+      console.log('[ICE] Total servers:', ICE_SERVERS.length, '(BASE + Metered)');
+    }
+    _turnFetchedAt = Date.now();
+    const probe = await probeTurn();
+    if (CS.state === CS_STATE.OFF) return;
+    if (probe.relay) {
+      toast(turnServers.length > 0 ? 'TURN bereit · Mobilfunk OK' : 'TURN bereit (öffentlich)');
+    } else {
+      toast('⚠ TURN blockiert – nur WLAN möglich');
+      dom.sigTag.textContent = 'NO TURN';
+    }
+  })();
+}
+
+/* ─── PEER_OPENING ─── */
+function onEnterPeerOpening(prev, ctx) {
+  const saved = (ctx && ctx.forceFreshId) ? null : store.get(STORAGE_KEYS.myId);
+  const useId = saved && /^[A-Za-z0-9_-]{1,40}$/.test(saved) ? saved : null;
+  CS.usingTempId = false;
+  S.partnerId = store.get(STORAGE_KEYS.partner);
+  CS.autoConnectOnOpen = !!S.partnerId;
+  S.peer = createPeer(useId);
+  bindPeerEvents(S.peer);
+}
+
+/* ─── READY_NO_PARTNER ─── */
+function onEnterReadyNoPartner(prev, ctx) {
+  dom.sigTag.textContent = 'SIG: READY';
+  if (prev === CS_STATE.PEER_OPENING) toast('Funkgerät bereit · SIG OK');
+}
+
+/* ─── READY_WITH_PARTNER ─── */
+function onEnterReadyWithPartner(prev, ctx) {
+  dom.sigTag.textContent = 'SIG: READY';
+  if (prev === CS_STATE.PEER_OPENING) toast('🔄 Verbinde mit letztem Partner…');
+  scheduleAutoConnect(ctx && typeof ctx.delayMs === 'number' ? ctx.delayMs : 800);
+}
+
+/* ─── CONNECTING ─── */
+async function onEnterConnecting(prev, ctx) {
+  toast('Verbinde…');
+  dom.sigTag.textContent = 'SIG: ░░░░';
+
+  if (ctx && ctx.reinit) {
+    const ok = await runFullPeerReinit();
+    if (CS.state !== CS_STATE.CONNECTING) return;
+    if (!ok) { setConnState(CS_STATE.RECONNECTING, { reason: 'reinit_failed' }); return; }
+  }
+
+  if (!isPeerOpen()) {
+    const ok = await waitForPeerOpen(6000);
+    if (CS.state !== CS_STATE.CONNECTING) return;
+    if (!ok) { setConnState(CS_STATE.RECONNECTING, { reason: 'peer_not_open' }); return; }
+  }
+
+  const targetId = (ctx && ctx.targetId) || CS.pendingTargetId || S.partnerId;
+  if (!targetId)            { setConnState(CS_STATE.READY_NO_PARTNER, { reason: 'no_target' }); return; }
+  if (targetId === S.myId)  { toast('Das ist dein eigener Code'); setConnState(CS_STATE.READY_NO_PARTNER, { reason: 'self_target' }); return; }
+  CS.pendingTargetId = targetId;
+
+  // Drop any leftovers from a prior attempt
+  if (S.call) { try { S.call.close(); } catch (_) {} S.call = null; }
+  if (S.conn) { try { S.conn.close(); } catch (_) {} S.conn = null; }
+  let stream;
+  try { stream = await rebuildOutgoingStream(); }
+  catch (e) {
+    await new Promise((r) => setTimeout(r, 400));
+    try { stream = await rebuildOutgoingStream(); }
+    catch (e2) {
+      toast('Mikrofon-Fehler');
+      setConnState(CS_STATE.READY_WITH_PARTNER, { reason: 'mic_failed' });
+      return;
+    }
+  }
+  if (CS.state !== CS_STATE.CONNECTING) return;
+
+  try {
+    const dc = S.peer.connect(targetId, { reliable: true });
+    S.conn = dc; bindDataConn(dc);
+    const call = S.peer.call(targetId, stream);
+    if (!call) throw new Error('peer.call() lieferte null');
+    S.call = call;
+    bindCall(call);
+
+    S.partnerId = targetId;
+    store.set(STORAGE_KEYS.partner, targetId);
+
+    CS.safetyTimer = setTimeout(() => {
+      if (CS.state === CS_STATE.CONNECTING) {
+        toast('Keine Antwort – scannt das andere Gerät?');
+        try { call.close(); } catch (_) {}
+        try { dc.close(); } catch (_) {}
+        setConnState(CS_STATE.READY_WITH_PARTNER, { reason: 'safety_timeout' });
+      }
+    }, TIMING.safetyTimeout);
+  } catch (e) {
+    console.error('[Connect]', e);
+    toast('Verbindung: ' + (e.message || 'Fehler'));
+    setConnState(CS_STATE.READY_WITH_PARTNER, { reason: 'connect_exception' });
+  }
+}
+
+/* ─── CONNECTED ─── */
+function onEnterConnected(prev, ctx) {
+  toast('Verbunden!');
+  dom.sigTag.textContent = 'SIG: ████';
+  CS.reconnectAttempt = 0;
+  acquireAllKeepAlives();
+  CS.stabilityTimer = setTimeout(() => {
+    if (CS.state === CS_STATE.CONNECTED) {
+      CS.teardownCount = 0;
+      console.log('[State] Stable 30s — teardown counter reset');
+    }
+  }, TIMING.stabilityWindow);
+  if (S.myPos && S.conn && S.conn.open) {
+    try {
+      const msg = { type: 'pos', lat: S.myPos.lat, lng: S.myPos.lng };
+      if (S._posIsIPBased) msg.ip = true;
+      S.conn.send(msg);
+    } catch (_) {}
+  }
+}
+
+/* ─── RECONNECTING ─── */
+function onEnterReconnecting(prev, ctx) {
+  const now = Date.now();
+  if (now - CS.lastTeardownAt < TIMING.teardownCooldown) CS.teardownCount++;
+  else CS.teardownCount = 1;
+  CS.lastTeardownAt = now;
+
+  stopTransmit();
+  stopHeartbeat();
+  if (S.call) { try { S.call.close(); } catch (_) {} S.call = null; }
+  if (S.conn) { try { S.conn.close(); } catch (_) {} S.conn = null; }
+  dom.sigTag.textContent = 'SIG: ░░░░';
+  toast('Verbinde neu…');
+
+  if (CS.teardownCount > TIMING.maxTeardowns) {
+    const backoff = Math.min(CS.teardownCount * 5000, 30000);
+    console.log('[State] Too many teardowns — hard backoff', backoff + 'ms');
+    dom.sigTag.textContent = 'SIG: ⏳';
+    CS.reconnectTimer = setTimeout(() => {
+      if (CS.state !== CS_STATE.RECONNECTING) return;
+      CS.teardownCount = 0;
+      if (S.partnerId) setConnState(CS_STATE.CONNECTING, { reason: 'post_backoff', reinit: true, targetId: S.partnerId });
+      else             setConnState(CS_STATE.READY_NO_PARTNER, { reason: 'post_backoff_no_partner' });
+    }, backoff);
+    return;
+  }
+
+  if (!S.partnerId) {
+    setConnState(CS_STATE.READY_NO_PARTNER, { reason: 'no_partner' });
+    return;
+  }
+
+  // Role-based staggering: the peer with the lower ID initiates
+  const iAmCaller = !S.myId || S.myId < S.partnerId;
+  const delay = (iAmCaller ? 3000 : 1500) + (CS.teardownCount * 1000);
+
+  CS.reconnectTimer = setTimeout(() => {
+    if (CS.state !== CS_STATE.RECONNECTING) return;
+    CS.reconnectAttempt++;
+    const needsReinit = CS.reconnectAttempt >= 5 && (CS.reconnectAttempt % 5) === 0;
+    if (iAmCaller) {
+      setConnState(CS_STATE.CONNECTING, {
+        reason: needsReinit ? 'reconnect_reinit' : 'reconnect_attempt',
+        reinit: needsReinit,
+        targetId: S.partnerId,
+      });
+    } else {
+      // Receiver: wait for incoming, if nothing arrives take over as caller
+      setTimeout(() => {
+        if (CS.state === CS_STATE.RECONNECTING) {
+          setConnState(CS_STATE.CONNECTING, {
+            reason: 'receiver_takeover',
+            reinit: needsReinit,
+            targetId: S.partnerId,
+          });
+        }
+      }, TIMING.iceDisconnectTimeout);
+    }
+  }, delay);
+}
+
+/* ─────────────── PEERJS EVENT BINDINGS ─────────────── */
 
 function bindPeerEvents(peer) {
   peer.on('open', (id) => {
+    if (S.peer !== peer) return;
     S.myId = id;
-    if (!_usingTempId) store.set(STORAGE_KEYS.myId, id);
-    _unavailableIdRetries = 0;
-    setConn('ready');
-    toast('Funkgerät bereit · SIG OK');
-    dom.sigTag.textContent = 'SIG: READY';
+    if (!CS.usingTempId) store.set(STORAGE_KEYS.myId, id);
+    CS.unavailableRetries = 0;
 
-    if (S.partnerId && S.partnerId !== id && !S.autoConnectTried) {
-      S.autoConnectTried = true;
-      toast('🔄 Verbinde mit letztem Partner…');
-      setTimeout(() => connectToPeer(S.partnerId), 800);
+    if (CS.state === CS_STATE.PEER_OPENING) {
+      if (CS.autoConnectOnOpen && S.partnerId && S.partnerId !== id) {
+        CS.autoConnectOnOpen = false;
+        setConnState(CS_STATE.READY_WITH_PARTNER, { reason: 'peer_opened_with_partner' });
+      } else {
+        setConnState(CS_STATE.READY_NO_PARTNER, { reason: 'peer_opened' });
+      }
     }
   });
 
   peer.on('call', async (incoming) => {
-    console.log('[Peer] Incoming call from', incoming.peer);
     if (S.peer !== peer) return;
+    if (CS.state === CS_STATE.OFF || CS.state === CS_STATE.POWERING_UP) return;
+    console.log('[Peer] Incoming call from', incoming.peer);
     try {
-      if (S.call) {
-        console.log('[Peer] Closing old call before accepting new');
-        try { S.call.close(); } catch(_) {}
-        S.call = null;
-      }
+      if (S.call) { try { S.call.close(); } catch (_) {} S.call = null; }
       const stream = await rebuildOutgoingStream();
       if (!stream) { toast('Mikrofon-Fehler'); return; }
       incoming.answer(stream);
@@ -2537,18 +2912,20 @@ function bindPeerEvents(peer) {
       if (incoming.peer && incoming.peer !== S.myId) {
         S.partnerId = incoming.peer;
         store.set(STORAGE_KEYS.partner, incoming.peer);
+        CS.pendingTargetId = incoming.peer;
       }
-    } catch (e) {
-      console.error(e); toast('Mikrofon verweigert');
-    }
+      if (CS.state !== CS_STATE.CONNECTING && CS.state !== CS_STATE.CONNECTED) {
+        setConnState(CS_STATE.CONNECTING, { reason: 'incoming_call', targetId: incoming.peer });
+      }
+    } catch (e) { console.error(e); toast('Mikrofon verweigert'); }
   });
 
   peer.on('connection', (dc) => {
-    console.log('[Peer] Incoming DataChannel from', dc.peer);
     if (S.peer !== peer) return;
-    if (S.conn) { try { S.conn.close(); } catch(_) {} }
-    S.conn = dc;
-    bindDataConn(dc);
+    if (CS.state === CS_STATE.OFF || CS.state === CS_STATE.POWERING_UP) return;
+    console.log('[Peer] Incoming DataChannel from', dc.peer);
+    if (S.conn) { try { S.conn.close(); } catch (_) {} }
+    S.conn = dc; bindDataConn(dc);
     if (dc.peer && dc.peer !== S.myId) {
       S.partnerId = dc.peer;
       store.set(STORAGE_KEYS.partner, dc.peer);
@@ -2556,46 +2933,44 @@ function bindPeerEvents(peer) {
   });
 
   peer.on('error', (err) => {
-    console.error('peer err', err);
+    console.error('[Peer] error', err && err.type);
     if (err.type === 'unavailable-id') {
-      // After background/sleep the broker holds the previous session for
-      // ~30–60s. Retry patiently so we reclaim our original ID — a temp ID
-      // would break auto-reconnect because the partner cannot find us.
-      _unavailableIdRetries++;
-      try { peer.destroy(); } catch(_) {}
+      CS.unavailableRetries++;
+      try { peer.destroy(); } catch (_) {}
       if (S.peer === peer) S.peer = null;
-      if (_unavailableIdRetries <= TIMING.unavailableIdRetries) {
-        const delay = Math.min(_unavailableIdRetries * TIMING.unavailableIdStep, TIMING.unavailableIdMax);
-        console.log('[Peer] ID unavailable, retry', _unavailableIdRetries, '/' + TIMING.unavailableIdRetries, 'in', delay, 'ms');
-        if (_unavailableIdRetries === 1) toast('Signal neu aufbauen…');
-        else if (_unavailableIdRetries === 5) toast('Warte auf Broker-Freigabe…');
-        _usingTempId = false;
-        setTimeout(() => { if (S.powered) initPeer(false); }, delay);
+      if (CS.unavailableRetries <= TIMING.unavailableIdRetries) {
+        const delay = Math.min(CS.unavailableRetries * TIMING.unavailableIdStep, TIMING.unavailableIdMax);
+        if (CS.unavailableRetries === 1)      toast('Signal neu aufbauen…');
+        else if (CS.unavailableRetries === 5) toast('Warte auf Broker-Freigabe…');
+        CS.usingTempId = false;
+        clearUnavailableIdTimer();
+        CS.unavailableIdTimer = setTimeout(() => {
+          CS.unavailableIdTimer = null;
+          if (CS.state === CS_STATE.OFF) return;
+          const saved = store.get(STORAGE_KEYS.myId);
+          const useId = saved && /^[A-Za-z0-9_-]{1,40}$/.test(saved) ? saved : null;
+          S.peer = createPeer(useId);
+          bindPeerEvents(S.peer);
+        }, delay);
       } else {
         const baseId = store.get(STORAGE_KEYS.myId);
         const tempId = baseId ? baseId + '-' + Date.now().toString(36).slice(-4) : null;
-        console.warn('[Peer] Using temp ID after', TIMING.unavailableIdRetries, 'retries:', tempId);
         toast('Temporäres Signal – Partner muss erneut scannen');
-        _usingTempId = true;
+        CS.usingTempId = true;
+        CS.unavailableRetries = 0;
         S.peer = createPeer(tempId);
-        _unavailableIdRetries = 0;
         bindPeerEvents(S.peer);
       }
       return;
     }
     if (S.peer !== peer) return;
     if (err.type === 'peer-unavailable') {
-      if (S.partnerId && !S.connected) {
-        _reconnectAttempt++;
-        const delay = Math.min(5000 + _reconnectAttempt * 2000, TIMING.reconnectMax);
-        console.log('[Peer] Partner unavailable — retry', _reconnectAttempt, 'in', Math.round(delay / 1000), 's');
-        if (_reconnectAttempt <= 3) toast('Partner offline – Versuch in ' + Math.round(delay / 1000) + 's…');
-        setConn('ready');
-        setTimeout(() => {
-          if (S.partnerId && !S.connected && isPeerReady()) connectToPeer(S.partnerId);
-        }, delay);
+      if (CS.state === CS_STATE.CONNECTING && S.partnerId) {
+        toast('Partner offline');
+        setConnState(CS_STATE.READY_WITH_PARTNER, { reason: 'peer_unavailable', delayMs: 5000 });
       } else {
-        toast('Kein Gerät unter diesem Code'); setConn('ready');
+        toast('Kein Gerät unter diesem Code');
+        if (CS.state === CS_STATE.CONNECTING) setConnState(CS_STATE.READY_NO_PARTNER, { reason: 'peer_unavailable' });
       }
       return;
     }
@@ -2604,279 +2979,72 @@ function bindPeerEvents(peer) {
   });
 
   peer.on('disconnected', () => {
+    if (S.peer !== peer) return;
+    if (CS.state === CS_STATE.OFF) return;
     console.log('[Peer] Broker disconnected');
-    setConn('ready');
-    if (!S.powered || S.peer !== peer) return;
-    const now = Date.now();
-    if (now - _lastBrokerDisconnect < 5000) { console.log('[Peer] Throttled'); return; }
-    _lastBrokerDisconnect = now;
-    clearTimeout(_brokerReconnectTimer);
-    try { peer.reconnect(); } catch(_) {}
-    _brokerReconnectTimer = setTimeout(() => {
-      if (S.powered && S.peer === peer && (peer.disconnected || peer.destroyed)) {
-        console.log('[Peer] Broker dead after 8s — full reinit');
-        fullPeerReinit().then(() => {
-          if (S.partnerId && !S.connected) scheduleReconnect(1000);
-        });
+    try { peer.reconnect(); } catch (_) {}
+    clearBrokerTimer();
+    CS.brokerReconnectTimer = setTimeout(() => {
+      CS.brokerReconnectTimer = null;
+      if (CS.state === CS_STATE.OFF) return;
+      if (S.peer === peer && (peer.disconnected || peer.destroyed)) {
+        console.log('[Peer] Broker dead after 8s — RECONNECTING');
+        setConnState(CS_STATE.RECONNECTING, { reason: 'broker_dead' });
       }
     }, 8000);
   });
 }
 
-function initPeer(forceFreshId = false) {
-  let savedId = forceFreshId ? null : store.get(STORAGE_KEYS.myId);
-  if (savedId && !/^[A-Za-z0-9_-]{1,40}$/.test(savedId)) savedId = null;
-  S.partnerId = store.get(STORAGE_KEYS.partner);
-  S.autoConnectTried = false;
-  _usingTempId = false;
-  S.peer = createPeer(savedId);
-  bindPeerEvents(S.peer);
-}
-
 function bindCall(call) {
   call.on('stream', (remoteStream) => {
-    clearTimeout(S._safetyTimeout);
+    if (S.call !== call) return;
+    clearSafetyTimer();
     S.remoteStream = remoteStream;
     processRemoteStream(remoteStream);
-    S.connected = true;
-    _isReconnecting = false;
-    _reconnectAttempt = 0;
-    setConn('connected');
-    setTalk('on');
-    dom.sigTag.textContent = 'SIG: ████';
+    startHeartbeat();
     playSquelchOpen();
-    toast('Verbunden!');
-    acquireAllKeepAlives();
-    clearTimeout(S._stabilityTimer);
-    S._stabilityTimer = setTimeout(() => {
-      if (S.connected) { _teardownCount = 0; console.log('[Reconnect] Stable 30s — counter reset'); }
-    }, TIMING.stabilityWindow);
-    if (S.myPos && S.conn && S.conn.open) {
-      try { const m = { type: 'pos', lat: S.myPos.lat, lng: S.myPos.lng }; if (S._posIsIPBased) m.ip = true; S.conn.send(m); } catch(_) {}
+    if (CS.state === CS_STATE.CONNECTING || CS.state === CS_STATE.RECONNECTING) {
+      setConnState(CS_STATE.CONNECTED, { reason: 'remote_stream' });
     }
   });
 
   call.on('close', () => {
-    if (S.call && S.call !== call) { console.log('[Call] Old call closed — ignoring'); return; }
-    const wasConnected = S.connected;
+    if (S.call && S.call !== call) return;
     playSquelchClose();
-    if (wasConnected && S.powered && S.partnerId) {
-      teardownAndReconnect();
-    } else {
-      S.connected = false; S.call = null;
-      setConn('ready'); setTalk('off');
-      stopTransmit(); stopHeartbeat();
-      dom.sigTag.textContent = 'SIG: READY';
-      toast('Getrennt');
+    if (CS.state === CS_STATE.CONNECTED && S.partnerId) {
+      setConnState(CS_STATE.RECONNECTING, { reason: 'call_closed' });
+    } else if (CS.state === CS_STATE.CONNECTING) {
+      setConnState(S.partnerId ? CS_STATE.READY_WITH_PARTNER : CS_STATE.READY_NO_PARTNER,
+                   { reason: 'call_closed_during_connect' });
     }
   });
 
-  call.on('error', (e) => { console.error(e); toast('Call-Fehler: ' + (e && e.message || e)); });
+  call.on('error', (e) => { console.error('[Call]', e); toast('Call-Fehler: ' + (e && e.message || e)); });
 
   const pc = call.peerConnection;
-  if (pc) {
-    pc.addEventListener('iceconnectionstatechange', () => {
-      console.log('[ICE]', pc.iceConnectionState);
-      if (S.call && S.call !== call) return;
-      if (pc.iceConnectionState === 'failed') {
-        console.log('[ICE] Failed — full reconnect');
-        toast('Verbindung verloren – verbinde neu…');
-        teardownAndReconnect();
-      } else if (pc.iceConnectionState === 'disconnected') {
-        dom.sigTag.textContent = 'SIG: ░░░░';
-        toast('Signal unterbrochen…');
-        clearTimeout(pc._disconnectTimer);
-        pc._disconnectTimer = setTimeout(() => {
-          if (S.call && S.call.peerConnection !== pc) return;
-          if (pc.iceConnectionState === 'disconnected') {
-            console.log('[ICE] Stuck disconnected 15s — forcing reconnect');
-            teardownAndReconnect();
-          }
-        }, TIMING.iceDisconnectTimeout);
-      } else if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed') {
-        clearTimeout(pc._disconnectTimer);
-        dom.sigTag.textContent = 'SIG: ████';
-        reportIceDiagnostics(pc);
-      }
-    });
-  }
-}
-
-/**
- * Resolve when the peer has opened and S.myId is set, or the timeout elapses.
- * Polls because the S.peer reference can be swapped mid-wait (e.g. the
- * unavailable-id retry path destroys the old peer and creates a new one).
- * A listener-based approach would get stuck on the destroyed peer.
- */
-function waitForPeerOpen(timeoutMs = 6000) {
-  return new Promise((resolve) => {
-    const deadline = Date.now() + timeoutMs;
-    if (isPeerReady()) { resolve(true); return; }
-    const timer = setInterval(() => {
-      if (isPeerReady()) { clearInterval(timer); resolve(true); }
-      else if (Date.now() >= deadline) { clearInterval(timer); resolve(false); }
-    }, 200);
-  });
-}
-
-async function connectToPeer(otherId) {
-  if (!otherId) { toast('Ungültiger Code'); return; }
-  if (otherId === S.myId) { toast('Das ist dein eigener Code'); return; }
-
-  dropActiveConnection();
-  setConn('connecting');
-  toast('Verbinde…');
-
-  if (!S.peer) { toast('Funk nicht bereit – Gerät neu starten'); setConn('ready'); return; }
-  if (!isPeerReady()) {
-    const ok = await waitForPeerOpen();
-    if (!ok) { toast('Signalserver nicht erreichbar'); setConn('ready'); return; }
-  }
-
-  let stream;
-  try {
-    stream = await rebuildOutgoingStream();
-  } catch (e) {
-    console.error('mic error', e);
-    await new Promise(r => setTimeout(r, 400));
-    try { stream = await rebuildOutgoingStream(); }
-    catch (e2) {
-      console.error('mic retry error', e2);
-      toast('Mikrofon-Fehler: ' + (e2.name || e2.message || 'unbekannt'));
-      setConn('ready'); return;
-    }
-  }
-
-  try {
-    const dc = S.peer.connect(otherId, { reliable: true });
-    S.conn = dc; bindDataConn(dc);
-    const call = S.peer.call(otherId, stream);
-    if (!call) throw new Error('peer.call() lieferte null');
-    S.call = call;
-    bindCall(call);
-    S.partnerId = otherId;
-    store.set(STORAGE_KEYS.partner, otherId);
-
-    S._safetyTimeout = setTimeout(() => {
-      if (!S.connected) {
-        toast('Keine Antwort – scannt das andere Gerät?');
-        setConn('ready');
-        try { call.close(); } catch(_) {}
-        try { dc.close(); } catch(_) {}
-      }
-    }, TIMING.safetyTimeout);
-  } catch (e) {
-    console.error('connect error', e);
-    toast('Verbindung: ' + (e.message || e.name || 'Fehler'));
-    setConn('ready');
-  }
-}
-
-/* §12 ─── RECONNECTION ───────────────────────────────────────── */
-
-let _isReconnecting = false;
-let _lastTeardownTime = 0;
-let _teardownCount = 0;
-
-function teardownAndReconnect() {
-  if (_isReconnecting || !S.powered || !S.partnerId) return;
-
-  const now = Date.now();
-  if (now - _lastTeardownTime < TIMING.teardownCooldown) {
-    _teardownCount++;
-  } else {
-    _teardownCount = 1;
-  }
-  _lastTeardownTime = now;
-
-  if (_teardownCount > TIMING.maxTeardowns) {
-    const backoff = Math.min(_teardownCount * 5000, 30000);
-    console.log('[Reconnect] Too many teardowns (' + _teardownCount + ') — backing off', backoff, 'ms');
-    toast('Instabil – warte ' + Math.round(backoff / 1000) + 's…');
-    dom.sigTag.textContent = 'SIG: ⏳';
-    setTimeout(async () => {
-      _teardownCount = 0;
-      _isReconnecting = false;
-      if (!S.connected && S.powered && S.partnerId) {
-        console.log('[Reconnect] Post-backoff: full peer reinit');
-        await fullPeerReinit();
-        if (S.partnerId && !S.connected) scheduleReconnect(500);
-      }
-    }, backoff);
-    return;
-  }
-
-  _isReconnecting = true;
-  console.log('[Reconnect] Teardown #' + _teardownCount + ' started');
-
-  stopTransmit();
-  clearTimeout(_reconnectTimer);
-  dropActiveConnection();
-
-  const iAmCaller = S.myId < S.partnerId;
-  const baseDelay = iAmCaller ? 3000 : 1500;
-  const delay = baseDelay + (_teardownCount * 1000);
-
-  toast(iAmCaller ? 'Verbinde neu…' : 'Warte auf Partner…');
-  dom.sigTag.textContent = 'SIG: ░░░░';
-
-  setTimeout(() => {
-    if (!S.powered) { _isReconnecting = false; return; }
-    _isReconnecting = false;
-    if (!S.powered || S.connected) return;
-    if (iAmCaller) {
-      scheduleReconnect(0);
-    } else {
-      setTimeout(() => {
-        if (!S.connected && S.powered && S.partnerId) {
-          console.log('[Reconnect] No incoming call after 15s — trying as caller');
-          scheduleReconnect(0);
+  if (!pc) return;
+  pc.addEventListener('iceconnectionstatechange', () => {
+    if (S.call && S.call !== call) return;
+    const iceState = pc.iceConnectionState;
+    console.log('[ICE]', iceState);
+    if (iceState === 'failed') {
+      toast('Verbindung verloren');
+      setConnState(CS_STATE.RECONNECTING, { reason: 'ice_failed' });
+    } else if (iceState === 'disconnected') {
+      dom.sigTag.textContent = 'SIG: ░░░░';
+      clearTimeout(pc._disconnectTimer);
+      pc._disconnectTimer = setTimeout(() => {
+        if (S.call && S.call.peerConnection !== pc) return;
+        if (pc.iceConnectionState === 'disconnected') {
+          setConnState(CS_STATE.RECONNECTING, { reason: 'ice_stuck_disconnected' });
         }
       }, TIMING.iceDisconnectTimeout);
+    } else if (iceState === 'connected' || iceState === 'completed') {
+      clearTimeout(pc._disconnectTimer);
+      dom.sigTag.textContent = 'SIG: ████';
+      reportIceDiagnostics(pc);
     }
-  }, delay);
-}
-
-let _reconnectTimer = null;
-let _reconnectAttempt = 0;
-
-function scheduleReconnect(delayMs) {
-  clearTimeout(_reconnectTimer);
-  _reconnectTimer = setTimeout(async () => {
-    if (!S.powered || S.connected) { _reconnectAttempt = 0; return; }
-    if (!S.partnerId) return;
-    _reconnectAttempt++;
-    console.log('[Reconnect] Attempt', _reconnectAttempt);
-
-    if (_reconnectAttempt >= 5 && _reconnectAttempt % 5 === 0) {
-      console.log('[Reconnect] 5+ failures — full peer reinit with fresh TURN');
-      toast('Peer-Server neu verbinden…');
-      const ok = await fullPeerReinit();
-      if (!ok) { console.warn('[Reconnect] Reinit failed'); scheduleReconnect(10000); return; }
-      if (S.partnerId && !S.connected) connectToPeer(S.partnerId);
-    } else {
-      // If TURN was refreshed, the existing peer is using stale iceServers —
-      // recreate it so new credentials flow through to RTCPeerConnection.
-      const turnRefreshed = await refreshTurnIfNeeded();
-      const peerStale = !S.peer || S.peer.disconnected || S.peer.destroyed;
-      if (turnRefreshed || peerStale) {
-        await fullPeerReinit();
-        setTimeout(() => { if (S.partnerId && !S.connected) connectToPeer(S.partnerId); }, 500);
-      } else {
-        connectToPeer(S.partnerId);
-      }
-    }
-
-    const nextDelay = Math.min(3000 * _reconnectAttempt, TIMING.reconnectMax);
-    setTimeout(() => {
-      if (!S.connected && S.powered && S.partnerId) {
-        console.log('[Reconnect] Attempt', _reconnectAttempt, 'stale — retrying');
-        scheduleReconnect(nextDelay);
-      } else {
-        _reconnectAttempt = 0;
-      }
-    }, 12000);
-  }, delayMs);
+  });
 }
 
 /* §13 ─── HEARTBEAT & DATACHANNEL ────────────────────────────── */
@@ -2889,12 +3057,11 @@ function startHeartbeat() {
   _lastPong = Date.now();
   _heartbeatInterval = setInterval(() => {
     if (!S.conn || !S.conn.open) { stopHeartbeat(); return; }
-    try { S.conn.send({ type: 'ping' }); } catch(_) {}
-    if (Date.now() - _lastPong > TIMING.heartbeatDead && S.connected) {
-      console.log('[Heartbeat] No pong for ' + (TIMING.heartbeatDead / 1000) + 's — dead');
+    try { S.conn.send({ type: 'ping' }); } catch (_) {}
+    if (Date.now() - _lastPong > TIMING.heartbeatDead && CS.state === CS_STATE.CONNECTED) {
+      console.log('[Heartbeat] No pong for', TIMING.heartbeatDead / 1000, 's — dead');
       toast('Verbindung tot – verbinde neu…');
-      stopHeartbeat();
-      teardownAndReconnect();
+      setConnState(CS_STATE.RECONNECTING, { reason: 'heartbeat_dead' });
     }
   }, TIMING.heartbeatInterval);
 }
@@ -2947,9 +3114,14 @@ function bindDataConn(dc) {
 }
 
 
-/* §14 ─── UI HELPERS ─────────────────────────────────────────── */
+/* §14 ─── UI HELPERS ─────────────────────────────────────────── *
+ * The body-dataset attributes are the UI's single input. setTalk/setTx
+ * are still direct writes because talk/tx are not connection state —
+ * they are user-intent (tap-to-talk toggle) and derived from it.
+ * The connection dataset (dom.body.dataset.conn) is written exclusively
+ * by renderConnUI() in §11 in response to state transitions.
+ * ─────────────────────────────────────────────────────────────── */
 
-function setConn(s) { dom.body.dataset.conn = s; }
 function setTalk(s) { dom.body.dataset.talk = s; }
 function setTx(on)  { dom.body.dataset.tx = on ? '1' : '0'; }
 
@@ -3000,11 +3172,11 @@ async function cycleEffect() {
   toast(fx.icon + ' ' + fx.name);
   vibrate(8);
 
-  if (S.connected && S.call && S.call.peerConnection) {
+  if (CS.state === CS_STATE.CONNECTED && S.call && S.call.peerConnection) {
     try {
       const newStream = await rebuildOutgoingStream();
       const sender = S.call.peerConnection
-        .getSenders().find(s => s.track && s.track.kind === 'audio');
+        .getSenders().find((s) => s.track && s.track.kind === 'audio');
       if (sender) await sender.replaceTrack(newStream.getAudioTracks()[0]);
       if (S.outMute) S.outMute.gain.value = S.transmitting ? 1 : 0;
     } catch (e) { console.error(e); }
@@ -3012,7 +3184,7 @@ async function cycleEffect() {
 }
 
 function onTalkTap() {
-  if (!S.connected || !S.outMute) {
+  if (CS.state !== CS_STATE.CONNECTED || !S.outMute) {
     playClick(100, 0.05, 0.1);
     toast('Zuerst verbinden!');
     return;
@@ -3049,7 +3221,7 @@ function sendRing() {
   if (S.conn && S.conn.open) S.conn.send({ type: 'ring' });
   playModeBeep();
   vibrate([40, 30, 40]);
-  if (!S.connected) toast('Kein Gerät verbunden');
+  if (CS.state !== CS_STATE.CONNECTED) toast('Kein Gerät verbunden');
 }
 
 function sendSOS() {
@@ -3061,23 +3233,15 @@ function sendSOS() {
 }
 
 /**
- * Show the QR-code modal. Linear and synchronous — exactly V1's proven
- * pattern with one extra: fall back to the persistent localStorage ID
- * if S.myId hasn't been assigned yet (happens right after power-on
- * while the PeerJS broker is still handshaking). The broker always
- * re-claims the same saved ID, so the cached value is the partner-
- * scannable code either way.
- *
- * No async spinner, no parallel waitForPeerOpen — those produced a
- * failure mode where the modal could open with the initial HTML still
- * showing (peerIdText = "—", qrHolder empty) if any step threw.
+ * Show the QR-code modal. Linear and synchronous, mirrors V1's proven
+ * pattern with one addition: fall back to the persistent localStorage
+ * ID if S.myId hasn't been assigned yet (right after power-on while the
+ * PeerJS broker is still handshaking). The broker re-claims the same
+ * saved ID, so the cached value is the partner-scannable code either way.
  */
 function showMyQr() {
   const id = S.myId || store.get(STORAGE_KEYS.myId);
-  if (!id) {
-    toast('Funkgerät verbindet sich — bitte kurz warten');
-    return;
-  }
+  if (!id) { toast('Funkgerät verbindet sich — bitte kurz warten'); return; }
   if (typeof qrcode !== 'function') {
     console.error('[Peer] qrcode library not loaded');
     toast('QR-Bibliothek nicht geladen – Seite neu laden');
@@ -3100,6 +3264,7 @@ function showMyQr() {
 function closeMyQr() { dom.qrModal.classList.add('hidden'); }
 
 async function openScanner() {
+  if (!canPair()) { toast('Funkgerät nicht bereit'); return; }
   dom.scanModal.classList.remove('hidden');
   try {
     if (!S.scanner) S.scanner = new Html5Qrcode('reader');
@@ -3116,10 +3281,10 @@ async function openScanner() {
 
 async function closeScanner() {
   if (S.scanner) {
-    // stop() and clear() must each be guarded: if stop() throws because
-    // the scanner was never started, clear() is still safe and necessary.
-    try { await S.scanner.stop(); } catch(_) {}
-    try { await S.scanner.clear(); } catch(_) {}
+    // stop() and clear() must each be guarded: stop() throws when the
+    // scanner was never started, but clear() is still safe and necessary.
+    try { await S.scanner.stop(); } catch (_) {}
+    try { await S.scanner.clear(); } catch (_) {}
   }
   dom.scanModal.classList.add('hidden');
 }
@@ -3127,9 +3292,10 @@ async function closeScanner() {
 async function onScanSuccess(txt) {
   const id = String(txt || '').trim();
   await closeScanner();
-  await new Promise(r => setTimeout(r, 250));
+  // Give iOS a moment to release the camera before we grab the mic
+  await new Promise((r) => setTimeout(r, 250));
   toast('Code gescannt');
-  connectToPeer(id);
+  setConnState(CS_STATE.CONNECTING, { reason: 'scan', targetId: id });
 }
 
 /* §15 ─── COMPASS & GEOLOCATION ──────────────────────────────── */
@@ -3496,114 +3662,77 @@ function acquireAllKeepAlives() { requestWakeLock(); acquireWebLock(); startAudi
 function releaseAllKeepAlives() { releaseWakeLock(); releaseWebLock(); stopAudioKeepAlive(); }
 
 
-/* §17 ─── VISIBILITY & NETWORK ───────────────────────────────── */
+/* §17 ─── VISIBILITY & NETWORK ───────────────────────────────── *
+ * All handlers are thin triggers into the connection state machine.
+ * None of them touch peer / call / conn directly — they just observe
+ * the environment and request transitions.
+ * ─────────────────────────────────────────────────────────────── */
 
-let _wentHiddenAt = 0;
-
-/**
- * Close and drop the active call/DataChannel, reset connection flags,
- * and return the UI to the "ready" state. Safe to call multiple times.
- */
-function dropActiveConnection() {
-  stopHeartbeat();
-  if (S.call) { try { S.call.close(); } catch(_) {} S.call = null; }
-  if (S.conn) { try { S.conn.close(); } catch(_) {} S.conn = null; }
-  S.connected = false;
-  setConn('ready');
-  setTalk('off');
-}
-
-/**
- * Resume logic when the page becomes visible again after being hidden.
- * Precedence:
- *   1. Still connected  → verify ICE health, teardown-and-reconnect if bad.
- *   2. Partner saved    → drop any stale socket, reinit peer.
- *                         On success, the 'open' handler auto-connects to
- *                         S.partnerId via autoConnectTried reset. If the
- *                         peer never opens, scheduleReconnect takes over.
- *   3. No partner       → nothing to do.
- */
-async function resumeFromBackground(hiddenMs) {
+document.addEventListener('visibilitychange', () => {
+  if (!isPoweredOn()) return;
+  if (document.hidden) {
+    CS.hiddenAt = Date.now();
+    console.log('[Visibility] Hidden');
+    acquireWebLock();
+    startAudioKeepAlive();
+    return;
+  }
+  const hiddenMs = Date.now() - CS.hiddenAt;
+  console.log('[Visibility] Visible again after', Math.round(hiddenMs / 1000), 's');
   if (S.ctx && S.ctx.state === 'suspended') {
     S.ctx.resume().then(() => console.log('[Audio] Context resumed'));
   }
-  if (S.connected || S.partnerId) acquireAllKeepAlives();
+  if (CS.state === CS_STATE.CONNECTED || S.partnerId) acquireAllKeepAlives();
 
-  // 1) Still connected — check ICE health
-  if (S.connected && S.call && S.call.peerConnection) {
+  // Short hiccup and we're connected → trust ICE, let it self-heal
+  if (hiddenMs < TIMING.shortHiccup && CS.state === CS_STATE.CONNECTED) return;
+
+  // Connected but long nap → check ICE; trigger reconnect if stuck
+  if (CS.state === CS_STATE.CONNECTED && S.call && S.call.peerConnection) {
     const pc = S.call.peerConnection;
     const iceState = pc.iceConnectionState;
     console.log('[Visibility] ICE state after resume:', iceState);
     if (iceState === 'failed' || iceState === 'closed') {
       toast('Verbindung verloren – verbinde neu…');
-      teardownAndReconnect();
+      setConnState(CS_STATE.RECONNECTING, { reason: 'resume_ice_failed' });
     } else if (iceState === 'disconnected') {
       toast('Verbindung prüfen…');
       setTimeout(() => {
         const cur = S.call && S.call.peerConnection;
-        if (cur && cur !== pc) return; // replaced in the meantime
-        if (cur && cur.iceConnectionState !== 'connected' && cur.iceConnectionState !== 'completed') {
-          teardownAndReconnect();
+        if (!cur || cur !== pc) return;
+        if (cur.iceConnectionState !== 'connected' && cur.iceConnectionState !== 'completed') {
+          setConnState(CS_STATE.RECONNECTING, { reason: 'resume_ice_stuck' });
         }
       }, 3000);
     }
     return;
   }
 
-  // 3) No partner — nothing to do
-  if (!S.partnerId) return;
-
-  // 2) Partner saved but not connected — reinit and let auto-connect fire
-  console.log('[Visibility] Resume with partner saved, hidden', Math.round(hiddenMs / 1000), 's');
-  toast('Verbinde neu…');
-  dropActiveConnection();
-
-  // Short hiccup with a live peer → just reconnect, no reinit needed
-  if (hiddenMs < TIMING.shortHiccup && S.peer && !S.peer.disconnected && !S.peer.destroyed) {
-    await refreshTurnIfNeeded();
-    scheduleReconnect(500);
-    return;
-  }
-
-  const opened = await fullPeerReinit();
-  if (!opened) {
-    console.warn('[Visibility] Peer did not open — fallback scheduleReconnect');
-    scheduleReconnect(2000);
-  }
-  // else: 'open' handler auto-connects to S.partnerId
-}
-
-document.addEventListener('visibilitychange', () => {
-  if (!S.powered) return;
-  if (document.hidden) {
-    _wentHiddenAt = Date.now();
-    console.log('[Visibility] Hidden');
-    acquireWebLock();
-    startAudioKeepAlive();
-  } else {
-    const hiddenMs = Date.now() - _wentHiddenAt;
-    console.log('[Visibility] Visible again after', Math.round(hiddenMs / 1000), 's');
-    resumeFromBackground(hiddenMs);
+  // Not connected but partner known → reconnect
+  if (S.partnerId && CS.state !== CS_STATE.CONNECTING && CS.state !== CS_STATE.RECONNECTING) {
+    setConnState(CS_STATE.RECONNECTING, { reason: 'resume_with_partner' });
   }
 });
 
 document.addEventListener('freeze', () => { console.log('[Lifecycle] Page frozen'); });
 document.addEventListener('resume', () => {
   console.log('[Lifecycle] Page resumed from freeze');
-  if (S.powered && !document.hidden) {
-    if (S.ctx && S.ctx.state === 'suspended') S.ctx.resume();
-    if (!S.connected && S.partnerId) scheduleReconnect(500);
+  if (!isPoweredOn() || document.hidden) return;
+  if (S.ctx && S.ctx.state === 'suspended') S.ctx.resume();
+  if (CS.state !== CS_STATE.CONNECTED && S.partnerId
+      && CS.state !== CS_STATE.CONNECTING && CS.state !== CS_STATE.RECONNECTING) {
+    setConnState(CS_STATE.RECONNECTING, { reason: 'lifecycle_resume' });
   }
 });
 
 /**
  * Re-probe TURN after a network-class change (WiFi ↔ cellular). A relay
- * candidate reachable on WiFi may be blocked on the carrier, and vice
- * versa, so we refresh the SIG tag accordingly.
+ * candidate reachable on WiFi may be blocked by the carrier, and the
+ * reverse. The result updates the SIG tag so the user sees the true state.
  */
 function reprobeTurnAfterNetworkChange() {
   probeTurn().then((probe) => {
-    if (!S.powered) return;
+    if (CS.state === CS_STATE.OFF) return;
     if (!probe.relay) {
       toast('⚠ TURN blockiert – nur WLAN möglich');
       dom.sigTag.textContent = 'NO TURN';
@@ -3611,146 +3740,46 @@ function reprobeTurnAfterNetworkChange() {
   });
 }
 
-function onNetworkChange() {
-  if (!S.powered) return;
+function handleNetworkChange() {
+  if (!isPoweredOn()) return;
   console.log('[NET] Network change detected');
   reprobeTurnAfterNetworkChange();
-  if (S.connected && S.call && S.call.peerConnection) {
+  if (CS.state === CS_STATE.CONNECTED && S.call && S.call.peerConnection) {
     const pc = S.call.peerConnection;
     setTimeout(() => {
       if (pc.iceConnectionState === 'disconnected' || pc.iceConnectionState === 'failed') {
-        console.log('[NET] ICE unhealthy after network change');
-        teardownAndReconnect();
+        setConnState(CS_STATE.RECONNECTING, { reason: 'network_change_ice_bad' });
       }
     }, 5000);
   }
-  if (S.peer && S.peer.disconnected) { try { S.peer.reconnect(); } catch(_) {} }
+  if (S.peer && S.peer.disconnected) { try { S.peer.reconnect(); } catch (_) {} }
 }
 
-function onNetworkBack() {
-  if (!S.powered) return;
+function handleNetworkOnline() {
+  if (!isPoweredOn()) return;
   console.log('[NET] Back online');
   toast('Netzwerk zurück…');
   reprobeTurnAfterNetworkChange();
-  if (!S.connected && S.partnerId) scheduleReconnect(2000);
-  if (S.peer && S.peer.disconnected) { try { S.peer.reconnect(); } catch(_) {} }
+  if (CS.state !== CS_STATE.CONNECTED && S.partnerId
+      && CS.state !== CS_STATE.CONNECTING && CS.state !== CS_STATE.RECONNECTING) {
+    setConnState(CS_STATE.RECONNECTING, { reason: 'network_back' });
+  }
+  if (S.peer && S.peer.disconnected) { try { S.peer.reconnect(); } catch (_) {} }
 }
 
-/* §18 ─── POWER ON / OFF ─────────────────────────────────────── */
+/* §18 ─── POWER TOGGLE ───────────────────────────────────────── *
+ * The power button is now a thin trigger — all setup / teardown lives
+ * in the OFF and POWERING_UP state handlers in §11.
+ * ─────────────────────────────────────────────────────────────── */
 
-async function powerOn() {
-  if (S.powered) return; // idempotent
-  dom.body.dataset.state = 'on';
-  try { await initAudio(); } catch(e) { console.error(e); toast('Audio-Fehler'); return; }
-
-  // Request geolocation FIRST (Firefox suppresses second prompt)
-  try {
-    await new Promise((resolve) => {
-      const timer = setTimeout(resolve, 4000);
-      navigator.geolocation.getCurrentPosition(
-        () => { clearTimeout(timer); resolve(); },
-        () => { clearTimeout(timer); resolve(); },
-        { enableHighAccuracy: false, maximumAge: Infinity, timeout: 3000 }
-      );
-    });
-    console.log('[GPS] Permission prompt resolved');
-  } catch(_) {}
-
-  try {
-    const s = await navigator.mediaDevices.getUserMedia({ audio: true });
-    s.getTracks().forEach(t => t.stop());
-  } catch(e) { toast('Mikrofon nötig!'); }
-
-  playStartupSequence();
-  S.powered = true;
-  applyMode(false);
-  setupViz();
-  S._clockInterval = setInterval(updateClock, 1000);
-  updateClock();
-  startCompass();
-
-  // Create the peer IMMEDIATELY with BASE_ICE (includes OpenRelay TURN).
-  // This gets us an ID within ~1s so QR / scan / last-partner auto-connect
-  // work without waiting for the Metered fetch. Metered credentials arrive
-  // asynchronously and trigger a peer reinit only if they actually change
-  // the iceServers (refreshTurnIfNeeded -> fullPeerReinit path).
-  initPeer();
-
-  // In the background: enrich ICE_SERVERS with Metered credentials and
-  // probe whether any relay candidate is reachable on this network.
-  (async () => {
-    const turnServers = await fetchTurnServers().catch(() => []);
-    if (!S.powered) return;
-    if (turnServers.length > 0) {
-      ICE_SERVERS = [...BASE_ICE, ...turnServers];
-      console.log('[ICE] Total servers:', ICE_SERVERS.length,
-        '(BASE:', BASE_ICE.length, '+ Metered:', turnServers.length, ')');
-    }
-    _turnFetchedAt = Date.now();
-
-    const probe = await probeTurn();
-    if (!S.powered) return;
-    if (probe.relay) {
-      toast(turnServers.length > 0
-        ? 'TURN bereit · Mobilfunk OK'
-        : 'TURN bereit (öffentlich)');
-    } else {
-      console.error('[TURN] No relay candidates on this network — WLAN↔Mobilfunk will fail');
-      toast('⚠ TURN blockiert – nur WLAN möglich');
-      dom.sigTag.textContent = 'NO TURN';
-    }
-  })();
-
-  window.addEventListener('online', onNetworkBack);
-  if (navigator.connection) navigator.connection.addEventListener('change', onNetworkChange);
-}
-
-function powerOff() {
-  if (!S.powered) return;
-  window.removeEventListener('online', onNetworkBack);
-  if (navigator.connection) navigator.connection.removeEventListener('change', onNetworkChange);
-  releaseAllKeepAlives();
-  stopHeartbeat();
-  clearTimeout(_reconnectTimer); _reconnectTimer = null;
-  clearTimeout(S._stabilityTimer); S._stabilityTimer = null;
-  clearTimeout(S._safetyTimeout); S._safetyTimeout = null;
-  _reconnectAttempt = 0; _teardownCount = 0; _isReconnecting = false;
-  _turnFetchedAt = 0;
-  if (S._clockInterval) { clearInterval(S._clockInterval); S._clockInterval = null; }
-  if (S._vizRafId) { cancelAnimationFrame(S._vizRafId); S._vizRafId = null; }
-  if (S._vizResizeHandler) { window.removeEventListener('resize', S._vizResizeHandler); S._vizResizeHandler = null; }
-  _dialRot = 0; _partnerRot = 0;
-  playShutdownSequence();
-  stopTransmit();
-  try { if (S.call) S.call.close(); } catch(_) {}
-  try { if (S.conn) S.conn.close(); } catch(_) {}
-  try { if (S.peer) S.peer.destroy(); } catch(_) {}
-  try { if (S.rawStream) S.rawStream.getTracks().forEach(t => t.stop()); } catch(_) {}
-  try { if (S.remoteAudioEl) { S.remoteAudioEl.srcObject = null; S.remoteAudioEl.remove(); } } catch(_) {}
-  disposeEffectChain();
-  S.peer = null; S.call = null; S.conn = null;
-  S.rawStream = null; S.outStream = null; S.remoteStream = null; S.remoteAudioEl = null;
-  S.connected = false; S.powered = false;
-  S.autoConnectTried = false;
-  setConn('off'); setTalk('off'); setTx(false);
-  stopCompass();
-  setTimeout(() => {
-    try { if (S.staticGain) S.staticGain.disconnect(); } catch(_) {}
-    try { if (S.ctx) S.ctx.close(); } catch(_) {}
-    S.ctx = null;
-    S.staticGain = null;
-    S.rxFilter = null;
-    S.rxDistortion = null;
-    S.rxAnalyser = null;
-    S.txAnalyser = null;
-    S.outMute = null;
-    dom.body.dataset.state = 'off';
-  }, 700);
+function togglePower() {
+  setConnState(CS.state === CS_STATE.OFF ? CS_STATE.POWERING_UP : CS_STATE.OFF,
+               { reason: 'power_button' });
 }
 
 /* §19 ─── EVENT WIRING & INIT ────────────────────────────────── */
 
-dom.powerBtn.addEventListener('click', () => { if (S.powered) powerOff(); else powerOn(); });
+dom.powerBtn.addEventListener('click', togglePower);
 dom.talkBtn.addEventListener('click', onTalkTap);
 window.addEventListener('keydown', (e) => {
   if (e.code === 'Space' && !e.repeat) { e.preventDefault(); onTalkTap(); }
