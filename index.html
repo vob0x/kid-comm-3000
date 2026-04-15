@@ -1822,6 +1822,7 @@ const TIMING = Object.freeze({
   teardownCooldown:   10000,     // teardowns within this gap count against the cap
   maxTeardowns:       3,         // teardowns before hard backoff
   iceDisconnectTimeout: 15000,   // stuck disconnected this long → force reconnect
+  iceCheckingTimeout: 15000,     // stuck in 'checking' this long → no candidate pair works, reinit
   shortHiccup:        5000,      // hidden below this → skip peer reinit
   longSleep:          30000,     // hidden above this → ICE state is stale, force full reinit
 
@@ -3379,7 +3380,21 @@ function bindCall(call) {
     }
   });
 
-  call.on('error', (e) => { console.error('[Call]', e); toast('Call-Fehler: ' + (e && e.message || e)); });
+  call.on('error', (e) => {
+    const type = e && e.type;
+    console.error('[Call]', e);
+    // `negotiation-failed` signals that SDP/ICE handshake broke — the
+    // RTCPeerConnection's internals are left in a corrupt state that a
+    // normal reconnect can't recover from (the next offer/answer round
+    // would reuse the same broken pc). Force a full peer reinit so we
+    // build a fresh peer with fresh ICE candidates and fresh SDP.
+    if (type === 'negotiation-failed') {
+      toast('Verbindung gestört – baue neu auf…');
+      setConnState(CS_STATE.RECONNECTING, { reason: 'negotiation_failed', forceReinit: true });
+      return;
+    }
+    toast('Call-Fehler: ' + (e && e.message || e));
+  });
 
   const pc = call.peerConnection;
   if (!pc) return;
@@ -3390,6 +3405,21 @@ function bindCall(call) {
     if (iceState === 'failed') {
       toast('Verbindung verloren');
       setConnState(CS_STATE.RECONNECTING, { reason: 'ice_failed' });
+    } else if (iceState === 'checking') {
+      // Watchdog: healthy ICE transitions out of 'checking' within a few
+      // seconds. Staying here for TIMING.iceCheckingTimeout means we're
+      // unable to find a working candidate pair — the state may still
+      // say CONNECTED (remote stream arrived) but no audio is actually
+      // flowing. Treat this as an ICE failure and force a full reinit.
+      clearTimeout(pc._checkingTimer);
+      pc._checkingTimer = setTimeout(() => {
+        if (S.call && S.call.peerConnection !== pc) return;
+        if (pc.iceConnectionState === 'checking') {
+          console.warn('[ICE] Stuck in checking — forcing reinit');
+          toast('Kein Kanal gefunden – verbinde neu…');
+          setConnState(CS_STATE.RECONNECTING, { reason: 'ice_stuck_checking', forceReinit: true });
+        }
+      }, TIMING.iceCheckingTimeout);
     } else if (iceState === 'disconnected') {
       dom.sigTag.textContent = 'SIG: ░░░░';
       clearTimeout(pc._disconnectTimer);
@@ -3400,6 +3430,7 @@ function bindCall(call) {
         }
       }, TIMING.iceDisconnectTimeout);
     } else if (iceState === 'connected' || iceState === 'completed') {
+      clearTimeout(pc._checkingTimer);
       clearTimeout(pc._disconnectTimer);
       dom.sigTag.textContent = 'SIG: ████';
       reportIceDiagnostics(pc);
@@ -3843,6 +3874,13 @@ async function onScanSuccess(txt) {
   await closeScanner();
   // Give iOS a moment to release the camera before we grab the mic
   await new Promise((r) => setTimeout(r, 250));
+  // If the scanned code matches the partner we're already talking to,
+  // don't tear down a working call — that would force a glare-prone
+  // reconnect. Give the kid a reassuring confirmation instead.
+  if (id && id === S.partnerId && CS.state === CS_STATE.CONNECTED) {
+    toast('Schon verbunden mit diesem Code ✓');
+    return;
+  }
   toast('Code gescannt');
   setConnState(CS_STATE.CONNECTING, { reason: 'scan', targetId: id });
 }
