@@ -2697,6 +2697,9 @@ async function onEnterPoweringUp(prev, ctx) {
   updateClock();
   startCompass();
 
+  // Capture the initial network type so the first handleNetworkChange
+  // can compare against it and correctly detect the FIRST class swap.
+  _lastNetworkType = getCurrentNetworkType();
   window.addEventListener('online', handleNetworkOnline);
   if (navigator.connection) navigator.connection.addEventListener('change', handleNetworkChange);
 
@@ -2844,6 +2847,12 @@ function onEnterReconnecting(prev, ctx) {
   dom.sigTag.textContent = 'SIG: ░░░░';
   toast('Verbinde neu…');
 
+  // forceReinit (e.g. from a network-class change) bypasses ICE-failure
+  // timeouts and the receiver-wait stagger: ICE is guaranteed dead, so
+  // we drive a fresh peer immediately on this side. The other side will
+  // detect ICE failure and reconnect at its own pace.
+  const forceReinit = !!(ctx && ctx.forceReinit);
+
   if (CS.teardownCount > TIMING.maxTeardowns) {
     const backoff = Math.min(CS.teardownCount * 5000, 30000);
     console.log('[State] Too many teardowns — hard backoff', backoff + 'ms');
@@ -2859,6 +2868,20 @@ function onEnterReconnecting(prev, ctx) {
 
   if (!S.partnerId) {
     setConnState(CS_STATE.READY_NO_PARTNER, { reason: 'no_partner' });
+    return;
+  }
+
+  // Force reinit short-circuits the role-stagger entirely.
+  if (forceReinit) {
+    CS.reconnectTimer = setTimeout(() => {
+      if (CS.state !== CS_STATE.RECONNECTING) return;
+      CS.reconnectAttempt++;
+      setConnState(CS_STATE.CONNECTING, {
+        reason: 'force_reinit',
+        reinit: true,
+        targetId: S.partnerId,
+      });
+    }, 500);
     return;
   }
 
@@ -3754,31 +3777,65 @@ function reprobeTurnAfterNetworkChange() {
   });
 }
 
+/** Current NetworkInformation type (wifi, cellular, ethernet, …). */
+let _lastNetworkType = null;
+
+function getCurrentNetworkType() {
+  return navigator.connection ? (navigator.connection.type || 'unknown') : 'unknown';
+}
+
+/**
+ * A network-class change (WiFi ↔ cellular) invalidates every ICE
+ * candidate from the previous interface — the existing call is
+ * guaranteed dead, even if iceconnectionstatechange hasn't fired yet.
+ * Force a full peer reinit immediately rather than waiting 15-30 s for
+ * ICE timeout to figure it out. The receiver side will detect the same
+ * via its own ICE failure and re-attempt, but the side that switched
+ * networks must drive the recovery aggressively.
+ */
 function handleNetworkChange() {
   if (!isPoweredOn()) return;
-  console.log('[NET] Network change detected');
+  const newType = getCurrentNetworkType();
+  const classChanged = _lastNetworkType && _lastNetworkType !== newType;
+  console.log('[NET] Network change — type:', newType,
+              classChanged ? '(was: ' + _lastNetworkType + ')' : '(no class change)');
+  _lastNetworkType = newType;
   reprobeTurnAfterNetworkChange();
-  if (CS.state === CS_STATE.CONNECTED && S.call && S.call.peerConnection) {
-    const pc = S.call.peerConnection;
-    setTimeout(() => {
-      if (pc.iceConnectionState === 'disconnected' || pc.iceConnectionState === 'failed') {
-        setConnState(CS_STATE.RECONNECTING, { reason: 'network_change_ice_bad' });
-      }
-    }, 5000);
+
+  if (classChanged
+      && (CS.state === CS_STATE.CONNECTED || CS.state === CS_STATE.CONNECTING)) {
+    console.log('[NET] Class change → forcing full reinit');
+    toast('Netz gewechselt – verbinde neu…');
+    setConnState(CS_STATE.RECONNECTING, { reason: 'network_class_change', forceReinit: true });
+    return;
   }
-  if (S.peer && S.peer.disconnected) { try { S.peer.reconnect(); } catch (_) {} }
+  if (CS.state !== CS_STATE.CONNECTED && S.partnerId
+      && CS.state !== CS_STATE.CONNECTING && CS.state !== CS_STATE.RECONNECTING) {
+    setConnState(CS_STATE.RECONNECTING, { reason: 'network_change' });
+  }
 }
 
 function handleNetworkOnline() {
   if (!isPoweredOn()) return;
-  console.log('[NET] Back online');
+  const newType = getCurrentNetworkType();
+  const classChanged = _lastNetworkType && _lastNetworkType !== newType;
+  console.log('[NET] Back online — type:', newType,
+              classChanged ? '(was: ' + _lastNetworkType + ')' : '');
+  _lastNetworkType = newType;
   toast('Netzwerk zurück…');
   reprobeTurnAfterNetworkChange();
-  if (CS.state !== CS_STATE.CONNECTED && S.partnerId
+
+  // Coming back online while CONNECTED means we were briefly offline —
+  // the call is dead even though state hasn't caught up yet.
+  if (CS.state === CS_STATE.CONNECTED) {
+    console.log('[NET] Online while CONNECTED → forcing full reinit');
+    setConnState(CS_STATE.RECONNECTING, { reason: 'online_after_offline', forceReinit: true });
+    return;
+  }
+  if (S.partnerId
       && CS.state !== CS_STATE.CONNECTING && CS.state !== CS_STATE.RECONNECTING) {
     setConnState(CS_STATE.RECONNECTING, { reason: 'network_back' });
   }
-  if (S.peer && S.peer.disconnected) { try { S.peer.reconnect(); } catch (_) {} }
 }
 
 /* §18 ─── POWER TOGGLE ───────────────────────────────────────── *
