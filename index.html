@@ -2797,14 +2797,24 @@ function closeActiveStreams({ closeConn = true } = {}) {
   if (closeConn && S.conn) { try { S.conn.close(); } catch (_) {} S.conn = null; }
 }
 
-/** Poll-based peer-open wait; resilient to S.peer reference swaps. */
+/**
+ * Poll-based peer-open wait; resilient to S.peer reference swaps.
+ * When an `unavailable-id` retry cycle is in flight (CS.unavailableIdTimer
+ * is set) we extend the deadline — the broker can take the full ~60 s of
+ * session TTL before releasing the saved ID. Cutting off at 6 s kicks the
+ * state machine into RECONNECTING, which races against the retry cycle
+ * by creating a parallel peer; both attempts then interfere at the broker.
+ */
 function waitForPeerOpen(timeoutMs = 6000) {
   return new Promise((resolve) => {
-    const deadline = Date.now() + timeoutMs;
+    const start = Date.now();
     if (isPeerOpen()) { resolve(true); return; }
     const timer = setInterval(() => {
-      if (isPeerOpen()) { clearInterval(timer); resolve(true); }
-      else if (Date.now() >= deadline) { clearInterval(timer); resolve(false); }
+      if (isPeerOpen()) { clearInterval(timer); resolve(true); return; }
+      const elapsed = Date.now() - start;
+      const patientCap = TIMING.unavailableIdRetries * TIMING.unavailableIdMax; // ~200 s worst case
+      const effective = CS.unavailableIdTimer ? Math.min(timeoutMs + patientCap, 75000) : timeoutMs;
+      if (elapsed >= effective) { clearInterval(timer); resolve(false); }
     }, 200);
   });
 }
@@ -2874,13 +2884,28 @@ function scheduleAutoConnect(delayMs) {
   }, delayMs);
 }
 
-/** Force destroy peer and create a fresh one, refreshing TURN first. */
+/**
+ * Force destroy peer and create a fresh one, refreshing TURN first.
+ *
+ * If an `unavailable-id` retry cycle is already in flight, DON'T create a
+ * competing peer — wait for the existing retry to land. Parallel peer
+ * creations flood the broker with session registrations for the same saved
+ * ID and prevent the lock from ever releasing. Similarly we clear any
+ * pending broker-reconnect timer so it can't fire a stale recovery on top
+ * of our fresh peer. And we keep `CS.unavailableRetries` across reinits so
+ * the escalating delays actually reach 60+ seconds, letting the broker's
+ * session TTL expire.
+ */
 async function runFullPeerReinit() {
+  if (CS.unavailableIdTimer) {
+    console.log('[Peer] Reinit: unavailable-id retry pending — waiting for it');
+    return waitForPeerOpen(8000);
+  }
   console.log('[Peer] Full reinit — destroy + fresh peer + refresh TURN');
+  clearBrokerTimer();
   if (S.peer) { try { S.peer.destroy(); } catch (_) {} S.peer = null; }
   S.call = null; S.conn = null;
   _turnFetchedAt = 0;
-  CS.unavailableRetries = 0;
   await refreshTurnIfNeeded();
   const savedId = store.get(STORAGE_KEYS.myId);
   const useId = savedId && /^[A-Za-z0-9_-]{1,40}$/.test(savedId) ? savedId : null;
