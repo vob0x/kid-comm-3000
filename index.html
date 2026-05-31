@@ -128,6 +128,19 @@ body[data-mode="geheim"] {
   --text: #d5ffe5;
   --text-dim: #5a9a78;
 }
+/* ---------- THEME: BAHNHOF (SBB red/white) ---------- */
+body[data-mode="bahnhof"] {
+  --primary: #eb0000;
+  --primary-glow: rgba(235, 0, 0, 0.75);
+  --accent: #ffffff;
+  --accent-glow: rgba(255, 255, 255, 0.6);
+  --bg-deep: #1a0606;
+  --bg-mid: #300b0b;
+  --surface: rgba(40, 10, 10, 0.7);
+  --surface-border: rgba(235, 0, 0, 0.5);
+  --text: #ffe9e9;
+  --text-dim: #c58585;
+}
 
 /* ============================================================
    BACKGROUND LAYER (mode-specific scenes)
@@ -147,6 +160,7 @@ body[data-mode="rettung"]   .bg-rettung   { display: block; }
 body[data-mode="astronaut"] .bg-astronaut { display: block; }
 body[data-mode="pilot"]     .bg-pilot     { display: block; }
 body[data-mode="geheim"]    .bg-geheim    { display: block; }
+body[data-mode="bahnhof"]   .bg-bahnhof   { display: block; }
 
 /* ---- POLIZEI bg: alternating strobes ---- */
 .strobe {
@@ -412,6 +426,51 @@ body[data-mode="geheim"]    .bg-geheim    { display: block; }
 @keyframes classifiedPulse {
   0%, 100% { opacity: 0.15; }
   50% { opacity: 0.35; }
+}
+
+/* ---- BAHNHOF bg: station platform with moving rails ---- */
+.bg-bahnhof::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(180deg, #1a0606 0%, #300b0b 45%, #1a0606 55%, #0a0303 100%),
+    repeating-linear-gradient(90deg,
+      transparent 0, transparent 60px,
+      rgba(235, 0, 0, 0.08) 60px, rgba(235, 0, 0, 0.08) 62px);
+}
+.sbb-rails {
+  position: absolute;
+  left: 0; right: 0; bottom: 20%;
+  height: 12px;
+  background: repeating-linear-gradient(90deg,
+    transparent 0, transparent 30px,
+    rgba(255, 255, 255, 0.25) 30px, rgba(255, 255, 255, 0.25) 60px);
+  animation: sbbRails 1.2s linear infinite;
+  opacity: 0.7;
+}
+@keyframes sbbRails {
+  from { background-position: 0 0; }
+  to   { background-position: -60px 0; }
+}
+.sbb-platform {
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  height: 20%;
+  background: linear-gradient(180deg, rgba(50, 15, 15, 0.9) 0%, rgba(20, 5, 5, 1) 100%);
+  border-top: 3px solid rgba(235, 0, 0, 0.6);
+  box-shadow: 0 -8px 20px rgba(235, 0, 0, 0.25);
+}
+.sbb-sign {
+  position: absolute;
+  top: 10%; left: 50%; transform: translateX(-50%);
+  background: #eb0000;
+  color: #fff;
+  font-family: 'Orbitron', sans-serif;
+  font-size: 22px; font-weight: 700; letter-spacing: 2px;
+  padding: 6px 16px; border-radius: 6px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5);
+  opacity: 0.85; pointer-events: none;
 }
 
 /* ============================================================
@@ -1249,6 +1308,11 @@ body[data-state="on"] .power-btn {
     <div class="radar-sweep"></div>
     <div class="classified">CLASSIFIED</div>
   </div>
+  <div class="bg-layer bg-bahnhof">
+    <div class="sbb-sign">GLEIS 7</div>
+    <div class="sbb-rails"></div>
+    <div class="sbb-platform"></div>
+  </div>
 </div>
 
 <!-- HUD -->
@@ -1430,6 +1494,11 @@ const MODES = [
     id: 'geheim', name: 'GEHEIMAGENT', icon: '🕵️',
     audio: { freq: 1400, q: 1.2, noise: 0.009, dist: 2.2, highpass: 500 },
     beep: 'spyLock',
+  },
+  {
+    id: 'bahnhof', name: 'BAHNHOF', icon: '🚉',
+    audio: { freq: 1400, q: 1.5, noise: 0.006, dist: 1.8, highpass: 500 },
+    beep: 'sbbChime',
   },
 ];
 
@@ -1810,7 +1879,53 @@ const BEEPS = {
     playTone(900, 0.18, 0.18, 'sawtooth', 0.26);
     playTone(500, 0.22, 0.20, 'sawtooth', 0.32);
   },
+  /** SBB station chime — the classic "S-B-B" three-note vibraphone gong
+   *  with a B+Ges doublestrike on the sustained final note. */
+  sbbChime: () => {
+    if (!state.ctx) return;
+    const notes = [
+      { f: 622.25, t: 0.00, d: 0.55 },  // S → Es (Eb5)
+      { f: 932.33, t: 0.40, d: 0.55 },  // B → B  (Bb5)
+      { f: 932.33, t: 0.80, d: 1.00 },  // B → B  (Bb5, sustained)
+      { f: 739.99, t: 0.80, d: 1.00 },  // + Ges (Gb5, doublestrike chord)
+    ];
+    for (const n of notes) playSbbNote(n.f, n.t, n.d);
+  },
 };
+
+/**
+ * Render a vibraphone-like note: sine fundamental mixed with a detuned
+ * second partial, a slow tremolo LFO, and a plucked envelope.
+ */
+function playSbbNote(freq, delay, duration) {
+  const ctx = state.ctx;
+  const start = ctx.currentTime + delay;
+  const fund = ctx.createOscillator();
+  fund.type = 'sine'; fund.frequency.value = freq;
+  const partial = ctx.createOscillator();
+  partial.type = 'sine'; partial.frequency.value = freq * 2.01;
+  const mix = ctx.createGain();
+  mix.gain.value = 0;
+  const partialMix = ctx.createGain();
+  partialMix.gain.value = 0.35;
+  const lfo = ctx.createOscillator();
+  lfo.frequency.value = 6;
+  const lfoDepth = ctx.createGain();
+  lfoDepth.gain.value = 0.15;
+  lfo.connect(lfoDepth);
+  lfoDepth.connect(mix.gain);
+  const peak = 0.28;
+  mix.gain.setValueAtTime(0, start);
+  mix.gain.linearRampToValueAtTime(peak, start + 0.01);
+  mix.gain.exponentialRampToValueAtTime(0.0001, start + duration);
+  fund.connect(mix);
+  partial.connect(partialMix);
+  partialMix.connect(mix);
+  mix.connect(ctx.destination);
+  fund.start(start);    fund.stop(start + duration + 0.05);
+  partial.start(start); partial.stop(start + duration + 0.05);
+  lfo.start(start);     lfo.stop(start + duration + 0.05);
+}
 
 function playModeBeep() {
   const fn = BEEPS[MODES[state.mode].beep];
